@@ -46,6 +46,14 @@ def _migrate_schema() -> None:
             conn.execute("ALTER TABLE servers ADD COLUMN tunnel_error TEXT")
         if "dns_error" not in server_cols:
             conn.execute("ALTER TABLE servers ADD COLUMN dns_error TEXT")
+        if "owner_id" not in server_cols:
+            conn.execute("ALTER TABLE servers ADD COLUMN owner_id INTEGER")
+            # servers from before user ownership belong to the first account
+            # (the users table lives in this file in the default setup)
+            try:
+                conn.execute("UPDATE servers SET owner_id = (SELECT MIN(id) FROM users) WHERE owner_id IS NULL")
+            except sqlite3.OperationalError:
+                pass
 
 
 def fetch_server(server_id: int) -> sqlite3.Row | None:

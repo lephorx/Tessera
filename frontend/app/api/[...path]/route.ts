@@ -3,7 +3,10 @@ import { type NextRequest, NextResponse } from "next/server"
 const BACKEND = process.env.CSCM_API_URL ?? "http://localhost:5000"
 
 async function proxy(req: NextRequest, segments: string[]) {
-  const isAuthRoute = segments[0] === "auth"
+  // reachable without a login: sign-in itself and the version badge
+  const isPublicRoute =
+    segments[0] === "auth" ||
+    (segments.length === 1 && segments[0] === "version")
   // EventSource cannot set an Authorization header, so the console stream
   // authenticates via a `?token=` query param instead.
   const isConsoleStream = segments[segments.length - 1] === "stream"
@@ -20,7 +23,7 @@ async function proxy(req: NextRequest, segments: string[]) {
       : null
 
   // Non-auth routes require the caller to have a JWT (real verification is on the backend)
-  if (!isAuthRoute && !bearer) {
+  if (!isPublicRoute && !bearer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

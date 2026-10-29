@@ -8,6 +8,7 @@ import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,9 @@ import {
 interface User {
   id: number
   username: string
+  is_admin: boolean
   created_at: string
+  server_count: number
 }
 
 interface Enrollment {
@@ -29,8 +32,9 @@ interface Enrollment {
   qr_code_data_uri: string
 }
 
-// Everyone who can sign in to this dashboard. All users have full access;
-// new users get their own authenticator code, like the first account.
+// Accounts that can sign in (admin only). Admins see every server and manage
+// users and settings; other users only see the servers they own. New users
+// get their own authenticator code, like the first account.
 export function UsersPanel() {
   const [users, setUsers] = useState<User[] | null>(null)
   const [currentId, setCurrentId] = useState<number | null>(null)
@@ -41,13 +45,9 @@ export function UsersPanel() {
   const [addOpen, setAddOpen] = useState(false)
   const [newName, setNewName] = useState("")
   const [newPassword, setNewPassword] = useState("")
+  const [newAdmin, setNewAdmin] = useState(false)
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null)
   const [otp, setOtp] = useState("")
-
-  // own password
-  const [currentPw, setCurrentPw] = useState("")
-  const [nextPw, setNextPw] = useState("")
-  const [confirmPw, setConfirmPw] = useState("")
 
   const load = useCallback(async () => {
     try {
@@ -79,13 +79,14 @@ export function UsersPanel() {
     setNewName("")
     setNewPassword("")
     setEnrollment(null)
+    setNewAdmin(false)
     setOtp("")
   }
 
   const startAdd = (e: React.FormEvent) => {
     e.preventDefault()
     run(async () => {
-      const res = await api.users.add(newName.trim(), newPassword)
+      const res = await api.users.add(newName.trim(), newPassword, newAdmin)
       setEnrollment({ username: newName.trim(), ...res })
     })
   }
@@ -101,6 +102,17 @@ export function UsersPanel() {
     })
   }
 
+  const toggleAdmin = (user: User) =>
+    run(async () => {
+      await api.users.setAdmin(user.id, !user.is_admin)
+      toast.success(
+        user.is_admin
+          ? `${user.username} is no longer an admin`
+          : `${user.username} is now an admin`
+      )
+      await load()
+    })
+
   const remove = () =>
     run(async () => {
       if (!removing) return
@@ -109,18 +121,6 @@ export function UsersPanel() {
       setRemoving(null)
       await load()
     })
-
-  const changePassword = (e: React.FormEvent) => {
-    e.preventDefault()
-    run(async () => {
-      if (nextPw !== confirmPw) throw new Error("The new passwords don't match")
-      await api.users.changePassword(currentPw, nextPw)
-      toast.success("Password changed")
-      setCurrentPw("")
-      setNextPw("")
-      setConfirmPw("")
-    })
-  }
 
   if (!users) {
     return (
@@ -137,7 +137,8 @@ export function UsersPanel() {
           <div>
             <h2 className="text-sm font-semibold">Users</h2>
             <p className="text-xs text-muted-foreground">
-              Everyone here can manage all servers and settings.
+              Admins manage every server, the users and the settings. Others
+              only see their own servers.
             </p>
           </div>
           <Button size="sm" onClick={() => setAddOpen(true)}>
@@ -147,13 +148,15 @@ export function UsersPanel() {
         </div>
         <ul className="divide-y divide-border">
           {users.map((user) => (
-            <li
-              key={user.id}
-              className="flex items-center justify-between gap-3 py-2.5"
-            >
-              <div className="min-w-0">
+            <li key={user.id} className="flex items-center gap-2 py-2.5">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
                   {user.username}
+                  {user.is_admin && (
+                    <span className="ml-2 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-normal text-primary">
+                      Admin
+                    </span>
+                  )}
                   {user.id === currentId && (
                     <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
                       You
@@ -161,10 +164,22 @@ export function UsersPanel() {
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Added {new Date(user.created_at).toLocaleDateString()}
+                  {user.server_count} server
+                  {user.server_count === 1 ? "" : "s"} · added{" "}
+                  {new Date(user.created_at).toLocaleDateString()}
                 </p>
               </div>
-              {user.id !== currentId && users.length > 1 && (
+              {user.id !== currentId && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => toggleAdmin(user)}
+                >
+                  {user.is_admin ? "Remove admin" : "Make admin"}
+                </Button>
+              )}
+              {user.id !== currentId && (
                 <Button
                   size="icon"
                   variant="ghost"
@@ -178,55 +193,6 @@ export function UsersPanel() {
             </li>
           ))}
         </ul>
-      </section>
-
-      <section className="rounded-lg border border-border p-6">
-        <h2 className="mb-4 text-sm font-semibold">Change your password</h2>
-        <form onSubmit={changePassword} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="pw-current">Current password</Label>
-            <Input
-              id="pw-current"
-              type="password"
-              autoComplete="current-password"
-              value={currentPw}
-              onChange={(e) => setCurrentPw(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pw-new">New password</Label>
-            <Input
-              id="pw-new"
-              type="password"
-              autoComplete="new-password"
-              value={nextPw}
-              onChange={(e) => setNextPw(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              At least 12 characters.
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pw-confirm">Repeat new password</Label>
-            <Input
-              id="pw-confirm"
-              type="password"
-              autoComplete="new-password"
-              value={confirmPw}
-              onChange={(e) => setConfirmPw(e.target.value)}
-            />
-          </div>
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              type="submit"
-              disabled={busy || !currentPw || !nextPw || !confirmPw}
-            >
-              {busy && <Loader2 className="size-3.5 animate-spin" />}
-              Change password
-            </Button>
-          </div>
-        </form>
       </section>
 
       {/* Add user */}
@@ -261,6 +227,15 @@ export function UsersPanel() {
                   At least 12 characters.
                 </p>
               </div>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>
+                  <span className="block font-medium">Admin</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Sees every server and manages users and settings.
+                  </span>
+                </span>
+                <Switch checked={newAdmin} onCheckedChange={setNewAdmin} />
+              </label>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeAdd}>
                   Cancel
@@ -324,8 +299,7 @@ export function UsersPanel() {
             <DialogTitle>Remove {removing?.username}?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            They are signed out right away and can&apos;t sign in again. Their
-            servers and settings stay.
+            They are signed out right away and can&apos;t sign in again.
           </p>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setRemoving(null)}>

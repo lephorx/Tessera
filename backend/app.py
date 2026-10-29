@@ -13,6 +13,7 @@ from flask import Flask, g, jsonify, request
 from dotenv import load_dotenv
 
 import backup_manager
+import update_manager
 from auth_helpers import authorize, extract_bearer_token
 from auth_manager import (
     authenticate_user,
@@ -21,9 +22,10 @@ from auth_manager import (
     has_users,
     initialize_auth_storage,
     issue_jwt,
+    primary_admin_id,
     verify_jwt,
 )
-from db import init_schema
+from db import get_db, init_schema
 from logger import get_logger, configure as configure_log
 from routes.backups import backups_bp
 from routes.console import console_bp
@@ -82,6 +84,35 @@ def _log_request() -> None:
         "Incoming request: method=%s path=%s remote=%s",
         request.method, request.path, request.remote_addr,
     )
+
+
+@app.before_request
+def _enforce_server_ownership():
+    """Non-admins may only touch servers they own.
+
+    Runs for every request with a <server_id> in its URL, so the ~50 routes
+    under /api/servers/<id>/... don't each need their own check. It only
+    narrows access: without a valid token it does nothing and the route's
+    own authorize() answers with 401.
+    """
+    if request.method == "OPTIONS":
+        return None
+    server_id = (request.view_args or {}).get("server_id")
+    if server_id is None:
+        return None
+    token = extract_bearer_token()
+    user = verify_jwt(token) if token else None
+    if not user or user["is_admin"]:
+        return None
+    with get_db() as conn:
+        row = conn.execute("SELECT owner_id FROM servers WHERE id = ?", (server_id,)).fetchone()
+    if row is None:
+        return None  # the route answers with 404
+    owner_id = row["owner_id"] if row["owner_id"] is not None else primary_admin_id()
+    if owner_id != user["id"]:
+        log.warning("Forbidden (not owner): path=%s user=%s server_id=%s", request.path, user["username"], server_id)
+        return jsonify({"success": False, "message": "You don't have access to this server"}), 403
+    return None
 
 
 @app.errorhandler(DockerException)
@@ -219,6 +250,14 @@ def auth_me():
     if auth_err:
         return auth_err
     return jsonify({"authenticated": True, "user": g.current_user})
+
+
+# ---------------------------------------------------------------------------
+# GET /api/version — no login needed, for the version badge
+# ---------------------------------------------------------------------------
+@app.route("/api/version", methods=["GET"])
+def version():
+    return jsonify({"version": update_manager.current_version()})
 
 
 # ---------------------------------------------------------------------------

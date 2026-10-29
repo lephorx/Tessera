@@ -81,6 +81,12 @@ export default function ServerDetailPage() {
   // latest polled setup / tunnel progress while one runs
   const [liveProgress, setLiveProgress] = useState<ServerProgress | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
+  // admins: give the server to another user
+  const [ownerUsers, setOwnerUsers] = useState<
+    { id: number; username: string }[] | null
+  >(null)
+  const [ownerChoice, setOwnerChoice] = useState("")
+  const [ownerSaving, setOwnerSaving] = useState(false)
   const [renameValue, setRenameValue] = useState("")
   const [renaming, setRenaming] = useState(false)
 
@@ -317,6 +323,31 @@ export default function ServerDetailPage() {
     }
   }
 
+  async function openOwnerDialog() {
+    try {
+      const res = await api.users.list()
+      setOwnerChoice(String(server?.owner?.id ?? ""))
+      setOwnerUsers(res.users)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not load users")
+    }
+  }
+
+  async function handleChangeOwner(e: React.FormEvent) {
+    e.preventDefault()
+    setOwnerSaving(true)
+    try {
+      await api.control.setOwner(serverId, Number(ownerChoice))
+      toast.success("Owner changed")
+      setOwnerUsers(null)
+      await refreshServerMeta()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not change owner")
+    } finally {
+      setOwnerSaving(false)
+    }
+  }
+
   async function handleRetryDns() {
     if (!server) return
     setRenaming(true)
@@ -501,6 +532,20 @@ export default function ServerDetailPage() {
               {server.loader_version ? ` / ${server.loader_version}` : ""} · :
               {server.port}
             </p>
+            {server.owner && user?.is_admin && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Owner: {server.owner.username}
+                {user?.is_admin && (
+                  <button
+                    type="button"
+                    onClick={openOwnerDialog}
+                    className="ml-2 underline underline-offset-4 hover:text-foreground"
+                  >
+                    Change
+                  </button>
+                )}
+              </p>
+            )}
           </div>
 
           {/* Control buttons */}
@@ -1045,6 +1090,49 @@ export default function ServerDetailPage() {
               Delete Server
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change owner (admins) */}
+      <Dialog
+        open={ownerUsers !== null}
+        onOpenChange={(open) => !open && setOwnerUsers(null)}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Change owner</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleChangeOwner} className="space-y-4 pt-1">
+            <p className="text-sm text-muted-foreground">
+              The owner can see and manage this server. Admins always can.
+            </p>
+            <Label htmlFor="server-owner">Owner</Label>
+            <select
+              id="server-owner"
+              value={ownerChoice}
+              onChange={(e) => setOwnerChoice(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            >
+              {ownerUsers?.map((u) => (
+                <option key={u.id} value={u.id} className="bg-background">
+                  {u.username}
+                </option>
+              ))}
+            </select>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOwnerUsers(null)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={ownerSaving || !ownerChoice}>
+                {ownerSaving && <Loader2 className="size-3.5 animate-spin" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

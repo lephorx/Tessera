@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS servers (
     -- Why the last PlayIT tunnel / Cloudflare DNS attempt failed (NULL = fine)
     tunnel_error  TEXT,
     dns_error     TEXT,
+    -- user who owns the server (NULL = the first admin); non-admins only
+    -- see and manage their own servers
+    owner_id      INTEGER,
     createdat     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

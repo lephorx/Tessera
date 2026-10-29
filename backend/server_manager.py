@@ -28,6 +28,7 @@ import sqlite3
 
 from dotenv import load_dotenv
 
+import auth_manager
 import docker_manager
 import progress_store
 from docker_manager import BEDROCK_TYPES, SERVER_TYPES, server_data_dir
@@ -145,8 +146,13 @@ def _create_server_record(
     mem_min: int,
     mem_max: int,
     local_only: bool = False,
+    owner_id: int | None = None,
 ) -> dict:
-    """Step 1: insert the DB row and return {server_id, subdomain} or an error dict."""
+    """Step 1: insert the DB row and return {server_id, subdomain} or an error dict.
+
+    owner_id is None for servers created via the CLI; those belong to the
+    first admin.
+    """
     if server_type not in SERVER_TYPES:
         return {
             "success": False,
@@ -162,10 +168,11 @@ def _create_server_record(
         with get_db() as conn:
             cur = conn.execute(
                 "INSERT INTO servers"
-                " (name, slug, type, version, loader_version, serverport, mem_min_gb, mem_max_gb, rcon_password, status, local_only)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning', ?)",
+                " (name, slug, type, version, loader_version, serverport, mem_min_gb, mem_max_gb, rcon_password, status,"
+                " local_only, owner_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning', ?, ?)",
                 (server_name, subdomain, server_type, version, loader_version,
-                 server_port, mem_min, mem_max, rcon_password, int(local_only)),
+                 server_port, mem_min, mem_max, rcon_password, int(local_only), owner_id),
             )
             db_server_id = cur.lastrowid
         log.info("Server record persisted: db_id=%d", db_server_id)
@@ -404,8 +411,19 @@ def deprovision_server(db_server_id: int) -> dict:
     return {"success": True, "message": f"Server '{server_name}' deleted successfully"}
 
 
-def list_servers() -> list[dict]:
+def server_owner(owner_id: int | None) -> dict | None:
+    """{id, username} of a server's owner; a missing owner means the first admin."""
+    user = auth_manager.get_user(owner_id) if owner_id is not None else None
+    if user is None:
+        fallback = auth_manager.primary_admin_id()
+        user = auth_manager.get_user(fallback) if fallback is not None else None
+    return {"id": user["id"], "username": user["username"]} if user else None
+
+
+def list_servers(owner_id: int | None = None) -> list[dict]:
     """Return all servers with their tunnels, DNS records, and runtime status.
+
+    owner_id: when given, only that user's servers (for non-admins).
 
     Returns:
         A list of server dicts.  Each dict includes ``id``, ``name``,
@@ -416,9 +434,11 @@ def list_servers() -> list[dict]:
         with get_db() as conn:
             servers = conn.execute(
                 "SELECT id, name, slug, type, version, loader_version, serverport, mem_min_gb, mem_max_gb, status, local_only,"
-                " tunnel_error, dns_error, createdat"
+                " tunnel_error, dns_error, owner_id, createdat"
                 " FROM servers ORDER BY id"
             ).fetchall()
+            if owner_id is not None:
+                servers = [s for s in servers if (server_owner(s["owner_id"]) or {}).get("id") == owner_id]
             cf_available = cloudflare_enabled()
             playit_ready = playit_configured()
             result = []
@@ -444,6 +464,7 @@ def list_servers() -> list[dict]:
                     "mem_max": s["mem_max_gb"],
                     "status": s["status"],
                     "local_only": bool(s["local_only"]),
+                    "owner": server_owner(s["owner_id"]),
                     "cloudflare_available": cf_available,
                     "playit_configured": playit_ready,
                     "tunnel_error": s["tunnel_error"],

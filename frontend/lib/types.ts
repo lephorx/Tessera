@@ -35,6 +35,8 @@ export interface Server {
   /** why the last Playit tunnel / Cloudflare DNS attempt failed */
   tunnel_error?: string | null
   dns_error?: string | null
+  /** who the server belongs to (admins see everyone's servers) */
+  owner?: { id: number; username: string } | null
   /** running (or just failed) creation / deletion */
   progress?: ServerProgress | null
 }

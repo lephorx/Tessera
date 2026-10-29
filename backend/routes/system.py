@@ -1,9 +1,9 @@
 """Version check and one-click update routes."""
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 import update_manager
-from auth_helpers import authorize
+from auth_helpers import authorize, require_admin
 from logger import get_logger
 
 log = get_logger("api")
@@ -23,6 +23,8 @@ def version():
     current = update_manager.current_version()
     latest, error = update_manager.latest_version(force=request.args.get("refresh") == "1")
     _, reason = update_manager.install_info()
+    if not reason and not g.current_user.get("is_admin"):
+        reason = "Ask an admin to install the update."
     return jsonify({
         "current": current,
         "latest": latest,
@@ -39,7 +41,7 @@ def version():
 # ---------------------------------------------------------------------------
 @system_bp.route("/update", methods=["POST"])
 def start_update():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
 

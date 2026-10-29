@@ -6,6 +6,8 @@ import { authApi, saveToken, clearToken } from "@/lib/api"
 export interface AuthUser {
   id: number
   username: string
+  /** admins see every server and manage users and settings */
+  is_admin?: boolean
 }
 
 export interface AuthState {
@@ -29,7 +31,8 @@ export function useAuth() {
     setState((s) => ({ ...s, loading: true }))
     try {
       const { ok, data } = await authApi.status()
-      if (!ok) throw new Error(data.error ?? "Authentication service is unavailable")
+      if (!ok)
+        throw new Error(data.error ?? "Authentication service is unavailable")
       setState({
         loading: false,
         statusError: null,
@@ -40,7 +43,10 @@ export function useAuth() {
     } catch (error) {
       setState({
         loading: false,
-        statusError: error instanceof Error ? error.message : "Authentication service is unavailable",
+        statusError:
+          error instanceof Error
+            ? error.message
+            : "Authentication service is unavailable",
         setupRequired: false,
         authenticated: false,
         user: null,

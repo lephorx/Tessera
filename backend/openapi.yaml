@@ -188,11 +188,11 @@ paths:
   /api/users:
     get:
       tags: [Auth]
-      summary: List users (all users have full access)
+      summary: List users with their admin flag and server count (admin)
       responses: { "200": { description: Users and the caller's id } }
     post:
       tags: [Auth]
-      summary: Start adding a user; returns a TOTP QR code for them to scan
+      summary: Start adding a user; returns a TOTP QR code for them to scan (admin)
       requestBody:
         required: true
         content:
@@ -200,7 +200,7 @@ paths:
             schema:
               type: object
               required: [username, password]
-              properties: { username: { type: string }, password: { type: string, minLength: 12 } }
+              properties: { username: { type: string }, password: { type: string, minLength: 12 }, is_admin: { type: boolean, default: false } }
       responses: { "202": { description: QR code and setup_token }, "400": { description: Invalid }, "409": { description: Username taken } }
 
   /api/users/verify:
@@ -218,11 +218,29 @@ paths:
       responses: { "201": { description: User created }, "400": { description: Wrong or expired code } }
 
   /api/users/{user_id}:
+    patch:
+      tags: [Auth]
+      summary: Grant or remove admin rights (admin; the last admin can't be demoted)
+      parameters: [{ name: user_id, in: path, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [is_admin], properties: { is_admin: { type: boolean } } }
+      responses: { "200": { description: Updated }, "404": { description: Not found }, "409": { description: Last admin } }
     delete:
       tags: [Auth]
-      summary: Remove a user (not yourself, not the last one); their sessions end at once
+      summary: >
+        Remove a user (admin). Not yourself, not the last admin, and not a user
+        who still owns servers. Their sessions end at once.
       parameters: [{ name: user_id, in: path, required: true, schema: { type: integer } }]
-      responses: { "200": { description: Removed }, "400": { description: Not allowed }, "404": { description: Not found } }
+      responses: { "200": { description: Removed }, "400": { description: Not allowed }, "404": { description: Not found }, "409": { description: Still owns servers } }
+
+  /api/version:
+    get:
+      tags: [Auth]
+      summary: Installed CSCM version (no login needed)
+      responses: { "200": { description: "{ version }" } }
 
   /api/users/me/password:
     put:
@@ -1039,6 +1057,18 @@ paths:
                 agent: { type: string }
       responses:
         { "202": { description: Started }, "404": { description: Not found }, "409": { description: Tunnel already exists or setup in progress } }
+
+  /api/servers/{id}/owner:
+    patch:
+      tags: [Networking]
+      summary: Give a server to another user (admin)
+      parameters: [{ $ref: "#/components/parameters/ServerId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [owner_id], properties: { owner_id: { type: integer } } }
+      responses: { "200": { description: Updated }, "400": { description: Unknown user }, "404": { description: Not found } }
 
   /api/servers/{id}/subdomain:
     patch:

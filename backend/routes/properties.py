@@ -3,7 +3,7 @@
 from flask import Blueprint, jsonify, request
 
 import properties_manager
-from auth_helpers import authorize
+from auth_helpers import authorize, require_admin
 from db import get_db
 from logger import get_logger
 
@@ -33,7 +33,7 @@ def get_default_properties():
 
 @properties_bp.route("/defaults/properties", methods=["PUT"])
 def put_default_properties():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
     body = request.get_json(silent=True) or {}
@@ -46,7 +46,7 @@ def put_default_properties():
 
 @properties_bp.route("/defaults/properties", methods=["PATCH"])
 def patch_default_properties():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
     body = request.get_json(silent=True) or {}
@@ -59,7 +59,7 @@ def patch_default_properties():
 
 @properties_bp.route("/defaults/properties", methods=["DELETE"])
 def remove_default_properties():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
     body = request.get_json(silent=True) or {}

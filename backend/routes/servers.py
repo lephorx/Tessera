@@ -3,13 +3,14 @@
 import sqlite3
 import threading
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 import docker_manager
 import progress_store
 import properties_manager
 from cloudflare_manager import cloudflare_enabled
-from auth_helpers import authorize
+from auth_helpers import authorize, require_admin
+import auth_manager
 from db import get_db
 from docker_manager import SERVER_TYPES
 from logger import get_logger
@@ -20,6 +21,7 @@ from server_manager import (
     create_server_tunnel,
     deprovision_server,
     list_servers,
+    server_owner,
     playit_configured,
     provision_server,
     rename_server_subdomain,
@@ -67,7 +69,8 @@ def get_servers():
     auth_err = authorize()
     if auth_err:
         return auth_err
-    servers = list_servers()
+    # admins see every server, other users only their own
+    servers = list_servers(None if g.current_user["is_admin"] else g.current_user["id"])
     log.info("Listed %d servers", len(servers))
     return jsonify({"servers": servers})
 
@@ -97,6 +100,7 @@ def get_server_detail(server_id: int):
     server["cloudflare_available"] = cloudflare_enabled()
     server["playit_configured"] = playit_configured()
     server["progress"] = active_progress(server_id)
+    server["owner"] = server_owner(server.pop("owner_id", None))
     server["tunnels"] = [
         {"address": t["tunnel_address"], "local_port": t["local_port"], "external_port": t["external_port"]}
         for t in tunnels
@@ -188,7 +192,7 @@ def create_server():
 
     # Step 1 (synchronous): create DB record → get server_id immediately
     record = _create_server_record(name, server_type, version, loader_version,
-                                    port, mem_min, mem_max, local_only)
+                                    port, mem_min, mem_max, local_only, owner_id=g.current_user["id"])
     if not record["success"]:
         log.error("Server creation record failed: %s", record.get("message"))
         return jsonify(record), 409 if record.get("conflict") else 400
@@ -442,6 +446,26 @@ def create_tunnel_endpoint(server_id: int):
 
     threading.Thread(target=_bg_tunnel, daemon=True).start()
     return jsonify({"success": True, "message": "Tunnel creation started", "server_id": server_id}), 202
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/servers/<id>/owner  (admin)  body: { "owner_id": 3 }
+# ---------------------------------------------------------------------------
+@servers_bp.route("/servers/<int:server_id>/owner", methods=["PATCH"])
+def change_owner(server_id: int):
+    auth_err = require_admin()
+    if auth_err:
+        return auth_err
+    body = request.get_json(silent=True) or {}
+    owner_id = body.get("owner_id")
+    if not isinstance(owner_id, int) or auth_manager.get_user(owner_id) is None:
+        return jsonify({"success": False, "message": "Unknown user"}), 400
+    with get_db() as conn:
+        updated = conn.execute("UPDATE servers SET owner_id = ? WHERE id = ?", (owner_id, server_id)).rowcount
+    if not updated:
+        return jsonify({"success": False, "message": "Server not found"}), 404
+    log.info("Server owner changed: db_id=%d owner_id=%d by=%s", server_id, owner_id, g.current_user["username"])
+    return jsonify({"success": True, "owner": server_owner(owner_id)})
 
 
 # ---------------------------------------------------------------------------

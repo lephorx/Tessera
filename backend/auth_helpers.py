@@ -51,3 +51,17 @@ def authorize() -> tuple | None:
         return jsonify({"error": "Unauthorized"}), 401
     g.current_user = user
     return None
+
+
+def require_admin() -> tuple | None:
+    """Like authorize(), but the caller must also be an admin."""
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    if not g.current_user.get("is_admin"):
+        log.warning(
+            "Forbidden (admin required): method=%s path=%s user=%s",
+            request.method, request.path, g.current_user.get("username"),
+        )
+        return jsonify({"error": "Only admins can do this"}), 403
+    return None

@@ -222,7 +222,8 @@ export default function DashboardPage() {
   }
 
   // first run: the setup wizard; later changes happen on /settings
-  if (!setup.completed) {
+  // only an admin can finish the first-run setup
+  if (!setup.completed && user?.is_admin) {
     return (
       <div className="min-h-screen bg-background">
         <TopNav user={user} onLogout={logout} />
@@ -262,10 +263,12 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setDefaultsOpen(true)}>
-              <Settings2 className="size-4" />
-              Defaults
-            </Button>
+            {user?.is_admin && (
+              <Button variant="outline" onClick={() => setDefaultsOpen(true)}>
+                <Settings2 className="size-4" />
+                Defaults
+              </Button>
+            )}
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="size-4" />
               New Server
@@ -295,6 +298,7 @@ export default function DashboardPage() {
                 server={server}
                 stats={statsMap[server.id] ?? null}
                 onRefresh={fetchServers}
+                viewerId={user?.id}
               />
             ))}
           </div>

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { UpdateBanner } from "@/components/UpdateBanner"
 
 interface Props {
-  user?: { id: number; username: string } | null
+  user?: { id: number; username: string; is_admin?: boolean } | null
   onLogout?: () => void
 }
 
@@ -31,9 +31,10 @@ export function TopNav({ user, onLogout }: Props) {
             {user && (
               <span className="text-xs text-muted-foreground">
                 {user.username}
+                {user.is_admin && " · admin"}
               </span>
             )}
-            {user && (
+            {user?.is_admin && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -70,8 +71,8 @@ export function TopNav({ user, onLogout }: Props) {
           </div>
         </div>
       </header>
-      {/* only for signed-in users; the version API needs a login */}
-      {user && <UpdateBanner checkRequest={updateCheck} />}
+      {/* only admins can install updates */}
+      {user?.is_admin && <UpdateBanner checkRequest={updateCheck} />}
     </>
   )
 }

@@ -9,10 +9,12 @@ import { TopNav } from "@/components/TopNav"
 import { AuthPage, AuthStatusError } from "@/components/AuthPage"
 import { SetupWizard } from "@/components/SetupWizard"
 import { UsersPanel } from "@/components/UsersPanel"
+import { AccountPanel } from "@/components/AccountPanel"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/hooks/useAuth"
 
-type Tab = "connection" | "users"
+type Tab = "connection" | "users" | "account"
+const TABS: Tab[] = ["connection", "users", "account"]
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -26,13 +28,13 @@ export default function SettingsPage() {
     retryStatus,
     logout,
   } = useAuth()
-  // /settings?tab=users opens the users tab
-  const [tab, setTab] = useState<Tab>(() =>
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("tab") === "users"
-      ? "users"
-      : "connection"
-  )
+  // /settings?tab=users opens that tab
+  const [tab, setTab] = useState<Tab>(() => {
+    const wanted =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("tab")
+    return TABS.includes(wanted as Tab) ? (wanted as Tab) : "connection"
+  })
 
   if (loading) {
     return (
@@ -53,6 +55,10 @@ export default function SettingsPage() {
     )
   }
 
+  // connection settings and users are for admins; everyone has an account tab
+  const isAdmin = !!user?.is_admin
+  const current: Tab = isAdmin ? tab : "account"
+
   return (
     <div className="min-h-screen bg-background">
       <TopNav user={user} onLogout={logout} />
@@ -67,13 +73,13 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
 
         <Tabs
-          value={tab}
+          value={current}
           onValueChange={(value) => {
             setTab(value as Tab)
             window.history.replaceState(
               null,
               "",
-              value === "users" ? "/settings?tab=users" : "/settings"
+              value === "connection" ? "/settings" : `/settings?tab=${value}`
             )
           }}
           className="mt-6 flex flex-col gap-0"
@@ -82,14 +88,26 @@ export default function SettingsPage() {
             variant="line"
             className="mb-6 w-full justify-start border-b border-border pb-0"
           >
-            <TabsTrigger value="connection">Connection</TabsTrigger>
-            <TabsTrigger value="users">Users</TabsTrigger>
+            {isAdmin && (
+              <>
+                <TabsTrigger value="connection">Connection</TabsTrigger>
+                <TabsTrigger value="users">Users</TabsTrigger>
+              </>
+            )}
+            <TabsTrigger value="account">Account</TabsTrigger>
           </TabsList>
-          <TabsContent value="connection">
-            <SetupWizard firstRun={false} onDone={() => router.push("/")} />
-          </TabsContent>
-          <TabsContent value="users">
-            <UsersPanel />
+          {isAdmin && (
+            <>
+              <TabsContent value="connection">
+                <SetupWizard firstRun={false} onDone={() => router.push("/")} />
+              </TabsContent>
+              <TabsContent value="users">
+                <UsersPanel />
+              </TabsContent>
+            </>
+          )}
+          <TabsContent value="account">
+            <AccountPanel username={user?.username ?? ""} />
           </TabsContent>
         </Tabs>
       </main>

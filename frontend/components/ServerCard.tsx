@@ -31,6 +31,8 @@ interface Props {
   server: Server
   stats: ServerStats | null
   onRefresh: () => void
+  /** signed-in user; other users' servers (seen by admins) show their owner */
+  viewerId?: number
 }
 
 type Action = "stop" | "kill" | null
@@ -55,7 +57,7 @@ function useSmoothPercent(real: number, active: boolean) {
   return Math.round(active ? Math.max(shown, real) : real)
 }
 
-export function ServerCard({ server, stats, onRefresh }: Props) {
+export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
   const [loadingAction, setLoadingAction] = useState<
     "start" | "stop" | "kill" | null
   >(null)
@@ -111,6 +113,11 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
             <p className="mt-0.5 text-xs text-muted-foreground capitalize">
               {server.type} · {server.version}
             </p>
+            {server.owner && server.owner.id !== viewerId && (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                Owner: {server.owner.username}
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <span className={`size-2 rounded-full ${statusDot}`} />

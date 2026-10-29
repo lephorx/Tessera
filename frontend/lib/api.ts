@@ -72,10 +72,15 @@ export const api = {
   users: {
     list: () => apiCall("/users"),
     // returns a QR code for the new user's authenticator app
-    add: (username: string, password: string) =>
+    add: (username: string, password: string, isAdmin: boolean) =>
       apiCall("/users", {
         method: "POST",
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, is_admin: isAdmin }),
+      }),
+    setAdmin: (id: number, isAdmin: boolean) =>
+      apiCall(`/users/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_admin: isAdmin }),
       }),
     verify: (setupToken: string, otp: string) =>
       apiCall("/users/verify", {
@@ -91,6 +96,12 @@ export const api = {
           new_password: newPassword,
         }),
       }),
+  },
+  // no login needed (version badge)
+  version: async (): Promise<{ version: string }> => {
+    const res = await fetch(`${API_BASE}/version`, { cache: "no-store" })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
   },
   setup: {
     get: () => apiCall("/setup"),
@@ -383,6 +394,11 @@ export const api = {
     restart: (id: number) =>
       apiCall(`/servers/${id}/restart`, { method: "POST" }),
     kill: (id: number) => apiCall(`/servers/${id}/kill`, { method: "POST" }),
+    setOwner: (id: number, ownerId: number) =>
+      apiCall(`/servers/${id}/owner`, {
+        method: "PATCH",
+        body: JSON.stringify({ owner_id: ownerId }),
+      }),
     tunnel: (id: number) =>
       apiCall(`/servers/${id}/tunnel`, { method: "POST" }),
     subdomain: (id: number, subdomain: string) =>

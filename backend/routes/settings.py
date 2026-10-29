@@ -1,9 +1,9 @@
-"""Connection settings and first-run setup routes (all require a login)."""
+"""Connection settings and first-run setup routes (admin-only, except reading the setup state)."""
 
 from flask import Blueprint, jsonify, request
 
 import settings_manager
-from auth_helpers import authorize
+from auth_helpers import authorize, require_admin
 from logger import get_logger
 
 log = get_logger("api")
@@ -18,7 +18,7 @@ settings_bp = Blueprint("settings", __name__, url_prefix="/api")
 # ---------------------------------------------------------------------------
 @settings_bp.route("/settings", methods=["GET"])
 def get_settings():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
     return jsonify({**settings_manager.public_view(), "setup": settings_manager.setup_state()})
@@ -26,7 +26,7 @@ def get_settings():
 
 @settings_bp.route("/settings", methods=["PUT"])
 def put_settings():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
     body = request.get_json(silent=True) or {}
@@ -49,7 +49,7 @@ def put_settings():
 # ---------------------------------------------------------------------------
 @settings_bp.route("/settings/agent", methods=["POST"])
 def start_agent():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
     try:
@@ -64,7 +64,7 @@ def start_agent():
 
 @settings_bp.route("/settings/agent", methods=["DELETE"])
 def stop_agent():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
     settings_manager.stop_agent()
@@ -85,7 +85,7 @@ def get_setup():
 
 @settings_bp.route("/setup", methods=["PUT"])
 def put_setup():
-    auth_err = authorize()
+    auth_err = require_admin()
     if auth_err:
         return auth_err
     body = request.get_json(silent=True) or {}

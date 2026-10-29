@@ -2,6 +2,7 @@ import { Geist, Geist_Mono, Montserrat } from "next/font/google"
 
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
+import { VersionBadge } from "@/components/VersionBadge"
 import { cn } from "@/lib/utils"
 
 const montserrat = Montserrat({ subsets: ["latin"], variable: "--font-sans" })
@@ -28,6 +29,7 @@ export default function RootLayout({
     >
       <body>
         {children}
+        <VersionBadge />
         <Toaster position="bottom-right" />
       </body>
     </html>
