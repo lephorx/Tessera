@@ -13,6 +13,7 @@ from flask import Flask, g, jsonify, request
 from dotenv import load_dotenv
 
 import backup_manager
+import server_manager
 import update_manager
 from auth_helpers import authorize, extract_bearer_token
 from auth_manager import (
@@ -66,6 +67,8 @@ def _validate_server_dirs() -> None:
 
 _validate_server_dirs()
 backup_manager.init_scheduler()
+# keep looking for tunnel ports playit.gg hadn't published yet
+server_manager.retry_missing_ports()
 
 app.register_blueprint(servers_bp)
 app.register_blueprint(files_bp)

@@ -17,6 +17,7 @@ import asyncio
 import os
 import sys
 import threading
+import time
 from typing import Callable
 import dns.resolver
 from dotenv import load_dotenv
@@ -662,6 +663,21 @@ if __name__ == "__main__":
     asyncio.run(_main())
 
 
+def _srv_resolvers() -> list:
+    """The system resolver, then public ones that don't share its cache:
+    right after a tunnel is created the system resolver may still hold a
+    "no such record" answer for a while."""
+    resolvers = [dns.resolver.Resolver()]
+    for servers in (["1.1.1.1", "1.0.0.1"], ["8.8.8.8", "8.8.4.4"]):
+        resolver = dns.resolver.Resolver(configure=False)
+        resolver.nameservers = servers
+        resolvers.append(resolver)
+    for resolver in resolvers:
+        resolver.lifetime = 5
+        resolver.cache = None
+    return resolvers
+
+
 def lookup_minecraft_srv_port(playit_address: str) -> int | None:
     """Resolve the SRV record playit.gg creates for a tunnel address.
 
@@ -669,14 +685,32 @@ def lookup_minecraft_srv_port(playit_address: str) -> int | None:
         playit_address: The tunnel hostname (e.g. ``abc.deu.mcjoin.link``).
 
     Returns:
-        The external TCP port, or ``None`` if the lookup fails.
+        The external TCP port, or ``None`` if no resolver knows it yet.
     """
-    try:
-        answers = dns.resolver.resolve(f"_minecraft._tcp.{playit_address}", "SRV")
-        for rdata in answers:
-            port = int(rdata.port)
-            log.debug("SRV lookup resolved: %s -> port %d", playit_address, port)
-            return port
-    except Exception as exc:
-        log.warning("SRV lookup failed for %s: %s", playit_address, exc)
+    name = f"_minecraft._tcp.{playit_address}"
+    for resolver in _srv_resolvers():
+        try:
+            for rdata in resolver.resolve(name, "SRV"):
+                port = int(rdata.port)
+                log.debug("SRV lookup resolved: %s -> port %d", playit_address, port)
+                return port
+        except Exception as exc:
+            log.debug("SRV lookup via %s failed for %s: %s", resolver.nameservers, playit_address, exc)
+    log.warning("SRV lookup failed for %s", playit_address)
     return None
+
+
+def wait_for_srv_port(playit_address: str, timeout: float = 120,
+                      on_wait: Callable[[int], None] | None = None) -> int | None:
+    """Look the port up until playit.gg has published its SRV record
+    (usually within a minute of creating the tunnel). ``on_wait`` gets the
+    seconds waited so far."""
+    started = time.monotonic()
+    while True:
+        port = lookup_minecraft_srv_port(playit_address)
+        waited = int(time.monotonic() - started)
+        if port or waited >= timeout:
+            return port
+        if on_wait:
+            on_wait(waited)
+        time.sleep(5)

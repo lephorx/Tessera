@@ -26,6 +26,7 @@ import secrets
 import shutil
 import sqlite3
 import threading
+import time
 
 from dotenv import load_dotenv
 
@@ -35,7 +36,7 @@ import player_lists
 import progress_store
 from docker_manager import BEDROCK_TYPES, SERVER_TYPES, server_data_dir
 from db import get_db
-from playit_manager import create_tunnel, delete_tunnel, last_error, lookup_minecraft_srv_port
+from playit_manager import create_tunnel, delete_tunnel, last_error, lookup_minecraft_srv_port, wait_for_srv_port
 from cloudflare_manager import cloudflare_enabled, create_dns_record, create_srv_record, delete_dns_record_by_id
 from logger import get_logger
 
@@ -103,7 +104,8 @@ def _create_dns_records(server_id: int, subdomain: str, tunnel_address: str,
     if not cloudflare_enabled():
         return tunnel_address, None
     if not is_bedrock and not external_port:
-        return tunnel_address, "PlayIT port lookup failed; Cloudflare DNS was skipped"
+        return tunnel_address, ("playit.gg hasn't published the tunnel port yet. CSCM keeps checking "
+                               "and sets up the custom address as soon as it's there")
 
     cname = create_dns_record(subdomain=subdomain, target=tunnel_address)
     if not cname:
@@ -270,7 +272,9 @@ def _provision_resources(
         # assigned port directly in the address as "host:port".
         tunnel_address, external_port = _split_bedrock_address(tunnel_address)
     else:
-        external_port = lookup_minecraft_srv_port(tunnel_address)
+        external_port = wait_for_srv_port(tunnel_address, on_wait=lambda waited: progress_store.update(
+            db_server_id, action="provision", percent=63,
+            step=f"Waiting for playit.gg to publish the tunnel port ({waited}s)"))
     if external_port:
         log.debug("External port resolved: %d", external_port)
     else:
@@ -293,6 +297,8 @@ def _provision_resources(
     connect_address, dns_warning = _create_optional_dns(
         db_server_id, subdomain, tunnel_address, external_port, is_bedrock,
     )
+    if not is_bedrock and not external_port:
+        retry_port_later(db_server_id)
     log.info("Server provisioned successfully: db_id=%d, connect_address=%s", db_server_id, connect_address)
     progress_store.update(db_server_id, action="provision", percent=100,
                           step="Server provisioned successfully", status="completed",
@@ -543,7 +549,9 @@ def create_server_tunnel(db_server_id: int, region: str | None = None, subscript
     if is_bedrock:
         tunnel_address, external_port = _split_bedrock_address(tunnel_address)
     else:
-        external_port = lookup_minecraft_srv_port(tunnel_address)
+        external_port = wait_for_srv_port(tunnel_address, on_wait=lambda waited: progress_store.update(
+            db_server_id, action="tunnel", percent=85,
+            step=f"Waiting for playit.gg to publish the tunnel port ({waited}s)"))
     if external_port:
         log.debug("External port resolved: %d", external_port)
     else:
@@ -572,6 +580,8 @@ def create_server_tunnel(db_server_id: int, region: str | None = None, subscript
     connect_address, dns_warning = _create_optional_dns(
         db_server_id, subdomain, tunnel_address, external_port, is_bedrock,
     )
+    if not is_bedrock and not external_port:
+        retry_port_later(db_server_id)
     log.info(
         "Tunnel created for server db_id=%d: connect_address=%s, external_port=%s",
         db_server_id, connect_address, external_port,
@@ -622,6 +632,8 @@ def rename_server_subdomain(db_server_id: int, new_subdomain: str) -> dict:
             with get_db() as conn:
                 conn.execute("UPDATE playit_tunnels SET external_port = ? WHERE server_id = ?",
                              (external_port, db_server_id))
+        else:
+            retry_port_later(db_server_id)
 
     address, warning = _create_dns_records(
         db_server_id, new_subdomain, tunnel["tunnel_address"], external_port, is_bedrock,
@@ -740,3 +752,68 @@ def _resync_server_dns(server, old: dict, enabled: bool) -> bool:
         ):
             log.warning("Old DNS record %s needs manual removal", row["name"])
     return True
+
+
+# ---------------------------------------------------------------------------
+# Late tunnel ports: playit.gg sometimes publishes the SRV record minutes
+# after the tunnel exists. Keep looking, then set up the custom address.
+# ---------------------------------------------------------------------------
+PORT_RETRY_EVERY = 60
+PORT_RETRY_FOR = 30 * 60
+_port_retries: set[int] = set()
+_port_retries_lock = threading.Lock()
+
+
+def retry_port_later(server_id: int) -> None:
+    with _port_retries_lock:
+        if server_id in _port_retries:
+            return
+        _port_retries.add(server_id)
+    threading.Thread(target=_retry_port, args=(server_id,), daemon=True).start()
+
+
+def _retry_port(server_id: int) -> None:
+    try:
+        deadline = time.monotonic() + PORT_RETRY_FOR
+        while time.monotonic() < deadline:
+            time.sleep(PORT_RETRY_EVERY)
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT s.slug, s.name, t.tunnel_address, t.external_port"
+                    " FROM servers s JOIN playit_tunnels t ON t.server_id = s.id WHERE s.id = ?",
+                    (server_id,),
+                ).fetchone()
+            if not row or row["external_port"]:
+                return  # deleted, or found some other way (e.g. Retry DNS)
+            port = lookup_minecraft_srv_port(row["tunnel_address"])
+            if not port:
+                continue
+            log.info("Tunnel port of server %d found late: %d", server_id, port)
+            with get_db() as conn:
+                conn.execute("UPDATE playit_tunnels SET external_port = ? WHERE server_id = ?", (port, server_id))
+                has_dns = conn.execute("SELECT 1 FROM dns_records WHERE server_id = ?", (server_id,)).fetchone()
+            if not has_dns:
+                _create_optional_dns(server_id, row["slug"] or _slugify(row["name"]),
+                                     row["tunnel_address"], port, False)
+            else:
+                _set_connection_error(server_id, "dns_error", None)
+            return
+        log.warning("Gave up waiting for the tunnel port of server %d", server_id)
+    finally:
+        with _port_retries_lock:
+            _port_retries.discard(server_id)
+
+
+def retry_missing_ports() -> None:
+    """At startup: keep looking for the ports of Java tunnels that have none."""
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT s.id, s.type FROM servers s JOIN playit_tunnels t ON t.server_id = s.id"
+                " WHERE t.external_port IS NULL"
+            ).fetchall()
+    except sqlite3.Error:
+        return
+    for row in rows:
+        if row["type"] not in BEDROCK_TYPES:
+            retry_port_later(row["id"])
