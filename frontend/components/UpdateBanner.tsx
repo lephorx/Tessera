@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowUpCircle, Loader2, TriangleAlert, X } from "lucide-react"
+import { Loader2, TriangleAlert, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -36,7 +36,12 @@ interface UpdateStatus {
 }
 
 type Phase =
-  "idle" | "confirm" | "starting" | "running" | "restarting" | "failed"
+  | "idle"
+  | "confirm"
+  | "starting"
+  | "running"
+  | "restarting"
+  | "failed"
 
 // Permanent banner shown while a newer CSCM version exists. "Update" starts
 // the backend's update helper, then follows its progress through the restart
@@ -149,12 +154,16 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
 
   return (
     <>
-      {/* floats over the page, so it never shifts the layout */}
+      {/* a yellow warning bar across the bottom; it floats over the page
+          (and the version badge) so it never shifts the layout */}
       {info?.update_available && (busy || hiddenFor !== info.latest) && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
-          <div className="pointer-events-auto flex w-full max-w-lg flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-card px-4 py-2.5 shadow-lg">
+        <div
+          role="status"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-amber-500 bg-amber-400 text-amber-950 shadow-lg"
+        >
+          <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-4 py-2.5">
             <p className="flex flex-1 items-center gap-2 text-sm">
-              <ArrowUpCircle className="size-4 shrink-0 text-primary" />
+              <TriangleAlert className="size-4 shrink-0" />
               <span>
                 <span className="font-medium">CSCM {info.latest}</span> is
                 available. You&apos;re on {info.current}.
@@ -164,6 +173,7 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
               <Button
                 size="sm"
                 disabled={busy}
+                className="bg-amber-950 text-amber-50 hover:bg-amber-900"
                 onClick={() => setPhase("confirm")}
               >
                 {busy && <Loader2 className="size-3.5 animate-spin" />}
@@ -174,7 +184,7 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
                 href={HELP_MANUAL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-muted-foreground underline underline-offset-4"
+                className="text-xs text-amber-900 underline underline-offset-4"
               >
                 {info.reason} How to update manually
               </a>
@@ -183,7 +193,7 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-7 text-muted-foreground"
+                className="size-7 text-amber-950 hover:bg-amber-500/60 hover:text-amber-950"
                 aria-label="Hide"
                 title="Hide until the next check"
                 onClick={() => setHiddenFor(info.latest)}
