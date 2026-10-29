@@ -35,7 +35,8 @@ interface UpdateStatus {
   version: string
 }
 
-type Phase = "idle" | "confirm" | "running" | "restarting" | "failed"
+type Phase =
+  "idle" | "confirm" | "starting" | "running" | "restarting" | "failed"
 
 // Permanent banner shown while a newer CSCM version exists. "Update" starts
 // the backend's update helper, then follows its progress through the restart
@@ -123,19 +124,24 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
   }, [log])
 
   async function startUpdate() {
+    // show progress right away; the request and the first poll take a moment
     setError("")
     fromVersion.current = info?.current ?? ""
+    setLog(["Contacting CSCM…"])
+    setPhase("starting")
     try {
       await api.system.update()
-      setLog([])
       setPhase("running")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start the update")
+      setError(
+        err instanceof Error ? err.message : "Could not start the update"
+      )
       setPhase("failed")
     }
   }
 
-  const busy = phase === "running" || phase === "restarting"
+  const busy =
+    phase === "starting" || phase === "running" || phase === "restarting"
   if (!info?.update_available && !busy && phase !== "failed") return null
 
   return (
@@ -184,7 +190,8 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
           <DialogHeader>
             <DialogTitle>
               {phase === "confirm" && `Update to CSCM ${info?.latest}`}
-              {phase === "running" && "Updating CSCM…"}
+              {(phase === "starting" || phase === "running") &&
+                "Updating CSCM…"}
               {phase === "restarting" && "Restarting CSCM…"}
               {phase === "failed" && "Update failed"}
             </DialogTitle>

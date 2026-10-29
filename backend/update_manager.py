@@ -43,6 +43,9 @@ LOG_FILE = DATA_DIR / "update.log"
 _VERSION_FILE = Path(__file__).with_name("VERSION")
 _cache: dict = {"checked_at": 0.0, "latest": None, "error": None}
 _cache_lock = threading.Lock()
+# Set while start_update's background thread pulls the helper image and
+# launches it, before the helper container exists.
+_launching = threading.Event()
 
 # Runs inside the helper container (docker:cli, Alpine).
 UPDATE_SCRIPT = r"""
@@ -137,17 +140,29 @@ def status() -> dict:
     state = STATE_FILE.read_text().strip() if STATE_FILE.exists() else "idle"
     lines = LOG_FILE.read_text().splitlines()[-40:] if LOG_FILE.exists() else []
     updater = _updater()
-    running = updater is not None and updater.status in ("created", "running")
+    running = _launching.is_set() or (updater is not None and updater.status in ("created", "running"))
     # The helper died without reporting back (e.g. Docker restarted).
     if state == "running" and not running:
         state = "failed"
     return {"state": state, "running": running, "log": lines, "version": current_version()}
 
 
+def _log_line(message: str) -> None:
+    with open(LOG_FILE, "a") as fh:
+        fh.write(f"{time.strftime('%H:%M:%S', time.gmtime())} {message}\n")
+
+
 def start_update() -> tuple[bool, str]:
+    """Check that an update can run, then launch it in the background.
+
+    Returns right away so the dashboard can show progress; pulling the helper
+    image can take a while on the first update.
+    """
     info, reason = install_info()
     if not info:
         return False, reason
+    if _launching.is_set():
+        return False, "An update is already running."
 
     existing = _updater()
     if existing is not None:
@@ -155,16 +170,34 @@ def start_update() -> tuple[bool, str]:
             return False, "An update is already running."
         existing.remove(force=True)
 
+    _launching.set()
+    STATE_FILE.write_text("running\n")
+    LOG_FILE.write_text("")
+    _log_line("Starting the update…")
+    threading.Thread(target=_launch, args=(info,), daemon=True).start()
+    return True, "Update started"
+
+
+def _launch(info: dict) -> None:
+    try:
+        _run_helper(info)
+    except Exception as exc:
+        log.exception("Could not start the update helper")
+        _log_line(f"Update failed: could not start the update helper ({exc})")
+        STATE_FILE.write_text("failed\n")
+    finally:
+        _launching.clear()
+
+
+def _run_helper(info: dict) -> None:
     client = docker_manager._get_client()
     try:
         client.images.get(UPDATER_IMAGE)
     except Exception:
         log.info("Pulling update helper image %s", UPDATER_IMAGE)
+        _log_line("Downloading the update helper (first update only)…")
         repo, _, tag = UPDATER_IMAGE.partition(":")
         client.images.pull(repo, tag=tag or "latest")
-
-    STATE_FILE.write_text("running\n")
-    LOG_FILE.write_text("")
 
     wd = info["working_dir"]
     client.containers.run(
@@ -182,4 +215,3 @@ def start_update() -> tuple[bool, str]:
         },
     )
     log.info("Update started: project=%s dir=%s", info["project"], wd)
-    return True, "Update started"
