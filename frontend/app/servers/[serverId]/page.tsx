@@ -592,6 +592,13 @@ export default function ServerDetailPage() {
                 ? "You'll be taken back to your servers when it's done."
                 : "This page unlocks when the server is ready."}
             </p>
+            {/* the dashboard keeps showing the progress on the server's card */}
+            <Button asChild variant="outline" size="sm" className="mt-4">
+              <Link href="/">
+                <ArrowLeft className="size-3.5" />
+                Back to dashboard
+              </Link>
+            </Button>
           </div>
         </div>
       )}
