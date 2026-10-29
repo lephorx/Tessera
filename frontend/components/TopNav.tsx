@@ -1,7 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
-import { Server, LogOut, Settings } from "lucide-react"
+import { Server, LogOut, Settings, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { UpdateBanner } from "@/components/UpdateBanner"
@@ -13,6 +14,8 @@ interface Props {
 }
 
 export function TopNav({ user, onLogout, onOpenSettings }: Props) {
+  const [updateCheck, setUpdateCheck] = useState(0)
+
   return (
     <>
     <header className="border-b border-border bg-background">
@@ -30,6 +33,17 @@ export function TopNav({ user, onLogout, onOpenSettings }: Props) {
             <span className="text-xs text-muted-foreground">
               {user.username}
             </span>
+          )}
+          {user && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setUpdateCheck((n) => n + 1)}
+              aria-label="Check for updates"
+              title="Check for updates"
+            >
+              <RefreshCw className="size-4" />
+            </Button>
           )}
           {onOpenSettings && (
             <Button
@@ -62,7 +76,7 @@ export function TopNav({ user, onLogout, onOpenSettings }: Props) {
       </div>
     </header>
     {/* only for signed-in users; the version API needs a login */}
-    {user && <UpdateBanner />}
+    {user && <UpdateBanner checkRequest={updateCheck} />}
     </>
   )
 }

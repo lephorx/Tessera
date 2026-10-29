@@ -26,6 +26,7 @@ interface VersionInfo {
   update_available: boolean
   can_update: boolean
   reason: string | null
+  check_error: string | null
 }
 
 interface UpdateStatus {
@@ -38,8 +39,9 @@ type Phase = "idle" | "confirm" | "running" | "restarting" | "failed"
 
 // Permanent banner shown while a newer CSCM version exists. "Update" starts
 // the backend's update helper, then follows its progress through the restart
-// and reloads the dashboard once the new version answers.
-export function UpdateBanner() {
+// and reloads the dashboard once the new version answers. Bumping
+// `checkRequest` asks GitHub right away (the "Check for updates" button).
+export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
   const [info, setInfo] = useState<VersionInfo | null>(null)
   const [phase, setPhase] = useState<Phase>("idle")
   const [log, setLog] = useState<string[]>([])
@@ -54,6 +56,25 @@ export function UpdateBanner() {
       // not critical; try again on the next interval
     }
   }, [])
+
+  // Manual check: skip the hourly cache and say what was found.
+  useEffect(() => {
+    if (!checkRequest) return
+    api.system
+      .version(true)
+      .then((v: VersionInfo) => {
+        setInfo(v)
+        if (v.update_available) {
+          if (v.can_update) setPhase("confirm")
+          else toast.info(`CSCM ${v.latest} is available. ${v.reason ?? ""}`)
+        } else if (v.check_error) {
+          toast.error(v.check_error)
+        } else {
+          toast.success(`CSCM is up to date (${v.current})`)
+        }
+      })
+      .catch(() => toast.error("Could not check for updates"))
+  }, [checkRequest])
 
   // Initial check, a periodic re-check, and resuming an update that was
   // already running when the page was (re)loaded.
