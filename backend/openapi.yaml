@@ -1017,6 +1017,87 @@ paths:
           description: File contents
         "404": { description: Not found }
 
+  /api/players/lists:
+    get:
+      tags: [Players]
+      summary: Default players and global bans of the signed-in user
+      description: >
+        Every new server of the user starts with the default whitelist and
+        operators (Bedrock: whitelist only) and with all global bans. Banning a
+        player on any server adds them here and bans them on the owner's other
+        Java servers. Unbanning stays per server.
+      responses:
+        "200":
+          description: Lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  whitelist: { type: array, items: { type: string } }
+                  ops: { type: array, items: { type: string } }
+                  bans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        reason: { type: string, nullable: true }
+                        created_at: { type: string }
+
+  /api/players/lists/{list}:
+    post:
+      tags: [Players]
+      summary: Add a default player (list is whitelist or ops)
+      parameters:
+        - { name: list, in: path, required: true, schema: { type: string, enum: [whitelist, ops] } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { username: { type: string } } }
+      responses:
+        "200": { description: The updated lists }
+        "400": { description: Not a valid Minecraft name }
+
+  /api/players/lists/{list}/{username}:
+    delete:
+      tags: [Players]
+      summary: Remove a default player
+      parameters:
+        - { name: list, in: path, required: true, schema: { type: string, enum: [whitelist, ops] } }
+        - { name: username, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: The updated lists }
+
+  /api/players/lists/apply:
+    post:
+      tags: [Players]
+      summary: Add the default players to all existing servers of the user
+      responses:
+        "200": { description: "Per server: names that could not be added" }
+
+  /api/players/bans:
+    post:
+      tags: [Players]
+      summary: Ban a player on all servers of the user, now and in the future
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { username: { type: string }, reason: { type: string } }
+      responses:
+        "200": { description: The updated lists }
+
+  /api/players/bans/{username}:
+    delete:
+      tags: [Players]
+      summary: Take a player off the global ban list (existing bans stay)
+      parameters:
+        - { name: username, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: The updated lists }
+
   /api/servers/{id}/files/raw:
     get:
       tags: [Files]

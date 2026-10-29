@@ -1519,6 +1519,11 @@ export function PlayersPanel({ serverId, isRunning, serverType }: Props) {
         {/* Banned — Bedrock has no ban/pardon command or ban list, so nothing to show here */}
         {!isBedrock && (
           <Section title="Banned" count={banned.length}>
+            <p className="text-[11px] text-muted-foreground">
+              A ban here also bans the player on all other servers of this
+              server&apos;s owner, and on their new servers. Unban only applies
+              to this server.
+            </p>
             <div className="flex flex-col gap-1.5">
               {banned.length === 0 ? (
                 <EmptyRow label="No banned players" />

@@ -18,6 +18,12 @@ function getStoredToken(): string | null {
   return localStorage.getItem(JWT_KEY)
 }
 
+export interface PlayerLists {
+  whitelist: string[]
+  ops: string[]
+  bans: { name: string; reason: string | null; created_at: string }[]
+}
+
 // GET a file with the login token (window.open and <img src> can't send it)
 async function fetchBlob(url: string): Promise<Blob> {
   const token = getStoredToken()
@@ -184,6 +190,32 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ enabled }),
       }),
+  },
+  /** default players and global bans of the signed-in user */
+  playerLists: {
+    get: () => apiCall("/players/lists") as Promise<PlayerLists>,
+    add: (list: "whitelist" | "ops", username: string) =>
+      apiCall(`/players/lists/${list}`, {
+        method: "POST",
+        body: JSON.stringify({ username }),
+      }) as Promise<PlayerLists>,
+    remove: (list: "whitelist" | "ops", username: string) =>
+      apiCall(`/players/lists/${list}/${encodeURIComponent(username)}`, {
+        method: "DELETE",
+      }) as Promise<PlayerLists>,
+    applyToAll: () =>
+      apiCall("/players/lists/apply", { method: "POST" }) as Promise<{
+        servers: { server: string; failed: string[] }[]
+      }>,
+    ban: (username: string, reason?: string) =>
+      apiCall("/players/bans", {
+        method: "POST",
+        body: JSON.stringify({ username, reason }),
+      }) as Promise<PlayerLists>,
+    unbanGlobally: (username: string) =>
+      apiCall(`/players/bans/${encodeURIComponent(username)}`, {
+        method: "DELETE",
+      }) as Promise<PlayerLists>,
   },
   players: {
     list: (id: number) => apiCall(`/servers/${id}/players`),

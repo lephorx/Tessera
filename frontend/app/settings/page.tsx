@@ -10,11 +10,13 @@ import { AuthPage, AuthStatusError } from "@/components/AuthPage"
 import { SetupWizard } from "@/components/SetupWizard"
 import { UsersPanel } from "@/components/UsersPanel"
 import { AccountPanel } from "@/components/AccountPanel"
+import { PlayerListsPanel } from "@/components/PlayerListsPanel"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/hooks/useAuth"
 
-type Tab = "connection" | "users" | "account"
-const TABS: Tab[] = ["connection", "users", "account"]
+type Tab = "connection" | "users" | "players" | "account"
+const TABS: Tab[] = ["connection", "users", "players", "account"]
+const MEMBER_TABS: Tab[] = ["players", "account"]
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -55,9 +57,10 @@ export default function SettingsPage() {
     )
   }
 
-  // connection settings and users are for admins; everyone has an account tab
+  // connection settings and users are for admins; everyone has the players
+  // and account tabs
   const isAdmin = !!user?.is_admin
-  const current: Tab = isAdmin ? tab : "account"
+  const current: Tab = isAdmin || MEMBER_TABS.includes(tab) ? tab : "players"
 
   return (
     <div className="min-h-screen bg-background">
@@ -94,6 +97,7 @@ export default function SettingsPage() {
                 <TabsTrigger value="users">Users</TabsTrigger>
               </>
             )}
+            <TabsTrigger value="players">Players</TabsTrigger>
             <TabsTrigger value="account">Account</TabsTrigger>
           </TabsList>
           {isAdmin && (
@@ -106,6 +110,9 @@ export default function SettingsPage() {
               </TabsContent>
             </>
           )}
+          <TabsContent value="players">
+            <PlayerListsPanel />
+          </TabsContent>
           <TabsContent value="account">
             <AccountPanel username={user?.username ?? ""} />
           </TabsContent>

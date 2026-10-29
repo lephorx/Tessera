@@ -31,6 +31,7 @@ from dotenv import load_dotenv
 
 import auth_manager
 import docker_manager
+import player_lists
 import progress_store
 from docker_manager import BEDROCK_TYPES, SERVER_TYPES, server_data_dir
 from db import get_db
@@ -208,6 +209,11 @@ def _provision_resources(
         server_type = row["type"]
         is_bedrock = server_type in BEDROCK_TYPES
         local_only = bool(row["local_only"])
+        # default players and global bans, before the server first starts
+        try:
+            player_lists.seed_new_server(db_server_id, server_type, row["owner_id"])
+        except Exception:
+            log.exception("Could not add default players to server %d", db_server_id)
         container_id = docker_manager.create_server_container(row)
         with get_db() as conn:
             conn.execute(

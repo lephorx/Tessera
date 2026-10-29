@@ -1,7 +1,8 @@
 """Player management routes: online list, whitelist, ops, bans, kick."""
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
+import player_lists
 import player_manager
 from auth_helpers import authorize
 from db import get_db
@@ -28,6 +29,100 @@ def _require_username(body: dict):
     if not username:
         return None, (jsonify({"success": False, "message": "'username' is required"}), 400)
     return username, None
+
+
+def _ban_on_other_servers(server_id: int, username: str, reason: str | None) -> None:
+    """A ban on one server goes on the owner's global list and to their other servers."""
+    owner_id = player_lists.owner_of(server_id)
+    if owner_id is not None:
+        player_lists.ban_everywhere(owner_id, username, reason, except_server=server_id)
+
+
+# ---------------------------------------------------------------------------
+# Default players and global bans of the signed-in user
+# GET    /api/players/lists                       -> { whitelist, ops, bans }
+# POST   /api/players/lists/<whitelist|ops>       body: { username }
+# DELETE /api/players/lists/<whitelist|ops>/<name>
+# POST   /api/players/lists/apply                 -> add the defaults to all servers
+# POST   /api/players/bans                        body: { username, reason? }
+# DELETE /api/players/bans/<name>                 -> off the list; servers stay banned
+# ---------------------------------------------------------------------------
+def _valid_name(name: str):
+    if not player_lists.USERNAME_RE.fullmatch(name):
+        return jsonify({"success": False,
+                        "message": "Minecraft names are 3 to 16 letters, digits or underscores"}), 400
+    return None
+
+
+@players_bp.route("/players/lists", methods=["GET"])
+def get_player_lists():
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    return jsonify({"success": True, **player_lists.get_lists(g.current_user["id"])}), 200
+
+
+@players_bp.route("/players/lists/<string:list_name>", methods=["POST"])
+def add_default_player(list_name: str):
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    if list_name not in player_lists.LISTS:
+        return jsonify({"success": False, "message": "Unknown list"}), 404
+    username, err = _require_username(request.get_json(silent=True) or {})
+    if err:
+        return err
+    err = _valid_name(username)
+    if err:
+        return err
+    player_lists.add_default(g.current_user["id"], list_name, username)
+    return jsonify({"success": True, **player_lists.get_lists(g.current_user["id"])}), 200
+
+
+@players_bp.route("/players/lists/<string:list_name>/<string:username>", methods=["DELETE"])
+def remove_default_player(list_name: str, username: str):
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    if list_name not in player_lists.LISTS:
+        return jsonify({"success": False, "message": "Unknown list"}), 404
+    player_lists.remove_default(g.current_user["id"], list_name, username)
+    return jsonify({"success": True, **player_lists.get_lists(g.current_user["id"])}), 200
+
+
+@players_bp.route("/players/lists/apply", methods=["POST"])
+def apply_default_players():
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    report = player_lists.apply_defaults_to_all(g.current_user["id"])
+    return jsonify({"success": True, "servers": report}), 200
+
+
+@players_bp.route("/players/bans", methods=["POST"])
+def add_global_ban():
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    body = request.get_json(silent=True) or {}
+    username, err = _require_username(body)
+    if err:
+        return err
+    err = _valid_name(username)
+    if err:
+        return err
+    reason = (body.get("reason") or "").strip() or None
+    player_lists.ban_everywhere(g.current_user["id"], username, reason)
+    return jsonify({"success": True, **player_lists.get_lists(g.current_user["id"])}), 200
+
+
+@players_bp.route("/players/bans/<string:username>", methods=["DELETE"])
+def remove_global_ban(username: str):
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    player_lists.remove_global_ban(g.current_user["id"], username)
+    return jsonify({"success": True, **player_lists.get_lists(g.current_user["id"])}), 200
 
 
 @players_bp.route("/servers/<int:server_id>/players", methods=["GET"])
@@ -130,6 +225,8 @@ def ban_add(server_id: int):
         return err
     reason = body.get("reason")
     result = player_manager.ban_add(server_id, username, reason)
+    if result["success"]:
+        _ban_on_other_servers(server_id, username, reason)
     return jsonify(result), 200 if result["success"] else 409
 
 
@@ -356,6 +453,8 @@ def ban_player(server_id: int, username: str):
     body = request.get_json(silent=True) or {}
     reason = body.get("reason")
     result = player_manager.ban_add(server_id, username, reason)
+    if result["success"]:
+        _ban_on_other_servers(server_id, username, reason)
     return jsonify(result), 200 if result["success"] else 409
 
 

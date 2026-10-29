@@ -83,3 +83,20 @@ CREATE TABLE IF NOT EXISTS bedrock_player_events (
 
 CREATE INDEX IF NOT EXISTS idx_bedrock_player_events_lookup
     ON bedrock_player_events (server_id, username, event_type, id);
+
+-- Players every new server of a CSCM user starts with (whitelist / ops)
+CREATE TABLE IF NOT EXISTS default_players (
+    owner_id   INTEGER NOT NULL,
+    list       TEXT    NOT NULL CHECK (list IN ('whitelist', 'ops')),
+    name       TEXT    NOT NULL COLLATE NOCASE,
+    PRIMARY KEY (owner_id, list, name)
+);
+
+-- Players banned on all servers of a CSCM user, now and in the future
+CREATE TABLE IF NOT EXISTS global_bans (
+    owner_id   INTEGER NOT NULL,
+    name       TEXT    NOT NULL COLLATE NOCASE,
+    reason     TEXT,
+    created_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (owner_id, name)
+);
