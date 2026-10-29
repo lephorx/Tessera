@@ -1,7 +1,15 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { Download, FileQuestion, Loader2, Pencil, Save } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import dynamic from "next/dynamic"
+import {
+  Braces,
+  Download,
+  FileQuestion,
+  Loader2,
+  Pencil,
+  Save,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -13,6 +21,47 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+
+// CodeMirror is big and browser-only, so it loads when a file is opened
+const CodeEditor = dynamic(() => import("@/components/CodeEditor"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center">
+      <Loader2 className="size-5 animate-spin text-muted-foreground" />
+    </div>
+  ),
+})
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  json: "JSON",
+  json5: "JSON",
+  jsonc: "JSON",
+  mcmeta: "JSON",
+  yml: "YAML",
+  yaml: "YAML",
+  properties: "Properties",
+  cfg: "Config",
+  conf: "Config",
+  ini: "INI",
+  toml: "TOML",
+  js: "JavaScript",
+  mjs: "JavaScript",
+  cjs: "JavaScript",
+  ts: "TypeScript",
+  xml: "XML",
+  html: "HTML",
+  css: "CSS",
+  md: "Markdown",
+  sh: "Shell",
+  bash: "Shell",
+  py: "Python",
+  lua: "Lua",
+  java: "Java",
+  kt: "Kotlin",
+  kts: "Kotlin",
+  log: "Log",
+  txt: "Text",
+}
 
 const IMAGE_EXTENSIONS = new Set([
   "png",
@@ -93,7 +142,9 @@ export function FileViewer({ serverId, file, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false)
   // textareas turn \r\n into \n; put Windows line endings back on save
   const [crlf, setCrlf] = useState(false)
-  const editorRef = useRef<HTMLTextAreaElement>(null)
+  // the editor's Ctrl+S calls the latest save() without being rebuilt
+  const saveRef = useRef<() => void>(() => {})
+  const saveShortcut = useCallback(() => saveRef.current(), [])
 
   useEffect(() => {
     if (!file) return
@@ -135,10 +186,6 @@ export function FileViewer({ serverId, file, onClose, onSaved }: Props) {
     }
   }, [serverId, file])
 
-  useEffect(() => {
-    if (editing) editorRef.current?.focus()
-  }, [editing])
-
   const dirty = editing && text !== original
 
   function close() {
@@ -165,6 +212,25 @@ export function FileViewer({ serverId, file, onClose, onSaved }: Props) {
     }
   }
 
+  useEffect(() => {
+    saveRef.current = save
+  })
+
+  const ext = file ? extension(file.name) : ""
+  const languageName = LANGUAGE_NAMES[ext] ?? null
+  const isJson = LANGUAGE_NAMES[ext] === "JSON" && ext !== "json5"
+
+  // pretty-print JSON with two-space indentation
+  function formatJson() {
+    try {
+      setText(JSON.stringify(JSON.parse(text), null, 2) + "\n")
+    } catch (err) {
+      toast.error(
+        `Can't format: ${err instanceof Error ? err.message : "invalid JSON"}`
+      )
+    }
+  }
+
   function download() {
     if (!file) return
     api.files
@@ -172,20 +238,6 @@ export function FileViewer({ serverId, file, onClose, onSaved }: Props) {
       .catch((err) =>
         toast.error(err instanceof Error ? err.message : "Download failed")
       )
-  }
-
-  function onEditorKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-      e.preventDefault()
-      save()
-    } else if (e.key === "Tab" && !e.shiftKey) {
-      // indent instead of leaving the editor (spaces: YAML forbids tabs)
-      e.preventDefault()
-      const el = e.currentTarget
-      const { selectionStart: start, selectionEnd: end } = el
-      setText(text.slice(0, start) + "  " + text.slice(end))
-      requestAnimationFrame(() => el.setSelectionRange(start + 2, start + 2))
-    }
   }
 
   return (
@@ -198,9 +250,11 @@ export function FileViewer({ serverId, file, onClose, onSaved }: Props) {
           </DialogTitle>
           <DialogDescription>
             {view.kind === "text" &&
-              (editing
-                ? "Editing. Save with the button or Ctrl+S / ⌘S."
-                : "Preview")}
+              `${languageName ? `${languageName} · ` : ""}${
+                editing
+                  ? "Editing. Save with the button or Ctrl+S / ⌘S."
+                  : "Preview"
+              }`}
             {view.kind === "image" && "Image preview"}
             {view.kind === "binary" && "No preview"}
             {view.kind === "loading" && "Loading…"}
@@ -223,25 +277,17 @@ export function FileViewer({ serverId, file, onClose, onSaved }: Props) {
               />
             </div>
           )}
-          {view.kind === "text" &&
-            (editing ? (
-              <textarea
-                ref={editorRef}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={onEditorKey}
-                spellCheck={false}
-                autoCapitalize="off"
-                autoComplete="off"
-                className="h-full w-full resize-none bg-transparent p-3 font-mono text-xs leading-relaxed outline-none"
-              />
-            ) : (
-              <pre className="h-full overflow-auto p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
-                {text || (
-                  <span className="text-muted-foreground">Empty file</span>
-                )}
-              </pre>
-            ))}
+          {view.kind === "text" && file && (
+            <CodeEditor
+              key={editing ? "edit" : "view"}
+              name={file.name}
+              value={text}
+              onChange={editing ? setText : undefined}
+              readOnly={!editing}
+              onSave={editing ? saveShortcut : undefined}
+              autoFocus={editing}
+            />
+          )}
           {view.kind === "binary" && (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <FileQuestion className="size-8" />
@@ -251,10 +297,23 @@ export function FileViewer({ serverId, file, onClose, onSaved }: Props) {
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" onClick={download}>
-            <Download className="size-3.5" />
-            Download
-          </Button>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="sm" onClick={download}>
+              <Download className="size-3.5" />
+              Download
+            </Button>
+            {view.kind === "text" && editing && isJson && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={formatJson}
+                title="Pretty-print with two-space indentation"
+              >
+                <Braces className="size-3.5" />
+                Format
+              </Button>
+            )}
+          </div>
           <div className="flex gap-2">
             {view.kind === "text" && editing && (
               <Button
