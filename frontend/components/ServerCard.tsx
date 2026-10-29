@@ -30,6 +30,7 @@ import { api } from "@/lib/api"
 import { parsePlayers, serverConnectAddress } from "@/lib/utils"
 import { CopyButton } from "@/components/CopyButton"
 import { ServerStateBadge, serverState } from "@/components/ServerStateBadge"
+import { ServerIcon } from "@/components/ServerIcon"
 
 interface Props {
   server: Server
@@ -131,18 +132,24 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
         )}
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-base leading-tight font-semibold">
-              {server.name}
-            </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground capitalize">
-              {server.type} · {server.version}
-            </p>
-            {server.owner && server.owner.id !== viewerId && (
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                Owner: {server.owner.username}
+          <div className="flex min-w-0 items-start gap-3">
+            <ServerIcon
+              serverId={server.id}
+              iconVersion={server.icon_version}
+            />
+            <div className="min-w-0">
+              <h2 className="truncate text-base leading-tight font-semibold">
+                {server.name}
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground capitalize">
+                {server.type} · {server.version}
               </p>
-            )}
+              {server.owner && server.owner.id !== viewerId && (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  Owner: {server.owner.username}
+                </p>
+              )}
+            </div>
           </div>
           <ServerStateBadge state={state} className="shrink-0" />
         </div>

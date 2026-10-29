@@ -43,6 +43,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { VersionPicker } from "@/components/VersionPicker"
 import { CopyButton } from "@/components/CopyButton"
+import { AppearancePanel } from "@/components/AppearancePanel"
+import { ServerIcon } from "@/components/ServerIcon"
 import {
   ServerStateBadge,
   TRANSITIONAL_STATES,
@@ -633,9 +635,15 @@ export default function ServerDetailPage() {
               <ArrowLeft className="size-3" />
               All Servers
             </Link>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-xl font-semibold">{server.name}</h1>
-              <ServerStateBadge state={state} />
+            <div className="flex items-center gap-3">
+              <ServerIcon
+                serverId={server.id}
+                iconVersion={server.icon_version}
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-xl font-semibold">{server.name}</h1>
+                <ServerStateBadge state={state} />
+              </div>
             </div>
             <p className="text-xs text-muted-foreground capitalize">
               {server.type} · {server.version}
@@ -959,6 +967,10 @@ export default function ServerDetailPage() {
             className="mt-0 border border-t-0 border-border"
           >
             <div className="divide-y divide-border">
+              <AppearancePanel
+                server={server}
+                onChanged={() => refreshServerMeta().catch(() => {})}
+              />
               {[
                 {
                   label: "Server Name",

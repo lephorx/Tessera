@@ -42,8 +42,26 @@ export interface Server {
   dns_error?: string | null
   /** who the server belongs to (admins see everyone's servers) */
   owner?: { id: number; username: string } | null
+  /** changes with the server icon; null when it has none */
+  icon_version?: number | null
   /** running (or just failed) creation / deletion */
   progress?: ServerProgress | null
+}
+
+export interface ServerAppearance {
+  /** Java's motd (may hold § codes and one line break) or Bedrock's server-name */
+  description: string
+  multiline: boolean
+  /** Bedrock has no server icons */
+  icon_supported: boolean
+  icon_version: number | null
+  max_length: number
+}
+
+export interface AppearanceSaved {
+  message: string
+  /** the server is running and shows the change after a restart */
+  restart_required: boolean
 }
 
 export interface ServerProgress {

@@ -5,6 +5,7 @@ import threading
 
 from flask import Blueprint, g, jsonify, request
 
+import appearance_manager
 import docker_manager
 import progress_store
 import properties_manager
@@ -45,6 +46,7 @@ def _serialize_server(row, *, include_runtime: bool = True) -> dict:
     server["created_at"] = server.pop("createdat")
     server["local_only"] = bool(server.get("local_only", 0))
     server.pop("rcon_password", None)
+    server["icon_version"] = appearance_manager.icon_version(server["id"])
     if include_runtime:
         server["runtime_status"] = docker_manager.runtime_status(server["id"])
     return server

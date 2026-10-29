@@ -30,6 +30,7 @@ import time
 
 from dotenv import load_dotenv
 
+import appearance_manager
 import auth_manager
 import docker_manager
 import player_lists
@@ -484,6 +485,7 @@ def list_servers(owner_id: int | None = None) -> list[dict]:
                     "dns_error": s["dns_error"],
                     "progress": active_progress(s["id"]),
                     "runtime_status": docker_manager.runtime_status(s["id"]),
+                    "icon_version": appearance_manager.icon_version(s["id"]),
                     "created_at": s["createdat"],
                     "tunnels": [
                         {"address": t["tunnel_address"], "local_port": t["local_port"], "external_port": t["external_port"]}

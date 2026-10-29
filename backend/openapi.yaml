@@ -507,6 +507,66 @@ paths:
       responses:
         "200": { description: OK }
 
+  /api/servers/{id}/appearance:
+    get:
+      tags: [Modification]
+      summary: Description (Java motd / Bedrock server-name) and whether an icon is set
+      parameters: [{ $ref: "#/components/parameters/ServerId" }]
+      responses:
+        { "200": { description: OK }, "404": { description: Not found } }
+
+  /api/servers/{id}/description:
+    put:
+      tags: [Modification]
+      summary: Set the description shown in the server list (read on start)
+      parameters: [{ $ref: "#/components/parameters/ServerId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description]
+              properties:
+                description:
+                  type: string
+                  description: Java allows two lines and § codes; Bedrock one line
+      responses:
+        "200": { description: OK }
+        "400": { description: Too long or too many lines }
+        "404": { description: Not found }
+
+  /api/servers/{id}/icon:
+    get:
+      tags: [Modification]
+      summary: The server-icon.png (Java only)
+      parameters: [{ $ref: "#/components/parameters/ServerId" }]
+      responses:
+        "200": { description: PNG image }
+        "404": { description: No icon }
+    put:
+      tags: [Modification]
+      summary: Upload a 64x64 PNG as server-icon.png (Java only)
+      parameters: [{ $ref: "#/components/parameters/ServerId" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [icon]
+              properties: { icon: { type: string, format: binary } }
+      responses:
+        "200": { description: OK }
+        "400": { description: Not a 64x64 PNG, or a Bedrock server }
+        "404": { description: Not found }
+    delete:
+      tags: [Modification]
+      summary: Remove the server icon
+      parameters: [{ $ref: "#/components/parameters/ServerId" }]
+      responses:
+        { "200": { description: OK }, "404": { description: Not found } }
+
   /api/servers/{id}/name:
     patch:
       tags: [Modification]

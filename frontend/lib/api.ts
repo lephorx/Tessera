@@ -1,4 +1,9 @@
-import type { CreateServerPayload, UploadProgressInfo } from "./types"
+import type {
+  AppearanceSaved,
+  CreateServerPayload,
+  ServerAppearance,
+  UploadProgressInfo,
+} from "./types"
 
 // All requests go to the local Next.js proxy route (/app/api/[...path]/route.ts)
 // which forwards the caller's JWT (from localStorage) on to the CSCM backend.
@@ -177,6 +182,30 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ properties }),
       }),
+  },
+  /** the description and icon players see in their server list */
+  appearance: {
+    get: (id: number) =>
+      apiCall(`/servers/${id}/appearance`) as Promise<ServerAppearance>,
+    setDescription: (id: number, description: string) =>
+      apiCall(`/servers/${id}/description`, {
+        method: "PUT",
+        body: JSON.stringify({ description }),
+      }) as Promise<AppearanceSaved>,
+    icon: (id: number) => fetchBlob(`/api/servers/${id}/icon`),
+    /** a 64x64 PNG, see `toServerIcon` */
+    setIcon: (id: number, icon: Blob) => {
+      const form = new FormData()
+      form.append("icon", icon, "server-icon.png")
+      return apiCall(`/servers/${id}/icon`, {
+        method: "PUT",
+        body: form,
+      }) as Promise<AppearanceSaved>
+    },
+    removeIcon: (id: number) =>
+      apiCall(`/servers/${id}/icon`, {
+        method: "DELETE",
+      }) as Promise<AppearanceSaved>,
   },
   bedrock: {
     getProperties: (id: number) => apiCall(`/servers/${id}/bedrock/properties`),
