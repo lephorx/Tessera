@@ -31,6 +31,7 @@ import { cn, parsePlayers, serverConnectAddress } from "@/lib/utils"
 import { CopyButton } from "@/components/CopyButton"
 import { ServerStateBadge, serverState } from "@/components/ServerStateBadge"
 import { ServerIcon } from "@/components/ServerIcon"
+import { Chip, TypeChip } from "@/components/Chip"
 
 interface Props {
   server: Server
@@ -124,7 +125,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
   return (
     <>
       <div
-        className="lift relative flex flex-col gap-4 border border-border bg-card p-5 modern:gap-3.5 modern:overflow-hidden"
+        className="lift relative flex flex-col gap-4 border border-border bg-card p-5 modern:gap-4 modern:overflow-hidden modern:p-5"
         inert={overlay || undefined}
       >
         {overlay && progress && (
@@ -136,13 +137,17 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
             <ServerIcon
               serverId={server.id}
               iconVersion={server.icon_version}
-              className="modern:size-12 modern:rounded-[12px]"
+              className="modern:size-14 modern:rounded-[14px]"
             />
-            <div className="min-w-0 modern:pt-0.5">
-              <h2 className="truncate text-base leading-tight font-semibold modern:text-[15px]">
+            <div className="min-w-0 modern:pt-1">
+              <h2 className="truncate text-base leading-tight font-semibold modern:text-[17px] modern:font-bold">
                 {server.name}
               </h2>
-              <p className="mt-0.5 text-xs text-muted-foreground capitalize modern:truncate">
+              <ServerStateBadge
+                state={state}
+                className="mt-1.5 hidden modern:inline-flex"
+              />
+              <p className="mt-0.5 text-xs text-muted-foreground capitalize modern:hidden">
                 {server.type} · {server.version}
               </p>
               {server.owner && server.owner.id !== viewerId && (
@@ -152,11 +157,30 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
               )}
             </div>
           </div>
-          <ServerStateBadge state={state} className="shrink-0" />
+          <ServerStateBadge state={state} className="shrink-0 modern:hidden" />
+        </div>
+
+        {/* modern: what the server is, as tags */}
+        <div className="hidden flex-wrap gap-1.5 modern:flex">
+          <TypeChip type={server.type} />
+          <Chip>{server.version === "LATEST" ? "Latest" : server.version}</Chip>
+          <Chip icon={Users}>
+            <span className="tabular-nums">
+              {isRunning && stats
+                ? (() => {
+                    const { online, max } = parsePlayers(stats)
+                    return `${online}/${max ?? "—"}`
+                  })()
+                : "—"}
+            </span>
+          </Chip>
+          <Chip icon={Network}>
+            <span className="tabular-nums">{server.port}</span>
+          </Chip>
         </div>
 
         {/* Stats row */}
-        <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
+        <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums modern:hidden">
           <span className="flex items-center gap-1">
             <Users className="size-3" />
             {isRunning && stats
@@ -242,13 +266,13 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
         )}
 
         {/* Actions */}
-        {/* modern shows only the action that fits the state, tinted */}
+        {/* modern: one filled action that fits the state, Manage beside it */}
         <div className="flex items-center gap-2 modern:mt-auto">
           <Button
             size="sm"
             className={cn(
               "flex-1 bg-emerald-600 text-white hover:bg-emerald-700",
-              "modern:bg-status-green/15 modern:text-status-green modern:hover:bg-status-green/25",
+              "modern:h-9 modern:bg-fill-green modern:text-on-fill modern:hover:bg-fill-green",
               isRunning && "modern:hidden"
             )}
             disabled={busy || isRunning || loadingAction !== null}
@@ -266,7 +290,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
             size="sm"
             className={cn(
               "flex-1 bg-amber-500 text-white hover:bg-amber-600",
-              "modern:bg-status-orange/15 modern:text-status-orange modern:hover:bg-status-orange/25",
+              "modern:h-9 modern:bg-fill-red modern:text-on-fill modern:hover:bg-fill-red",
               !isRunning && "modern:hidden"
             )}
             disabled={busy || !isRunning || loadingAction !== null}
@@ -283,7 +307,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
           <Button
             size="sm"
             variant="destructive"
-            className="flex-1 modern:size-7 modern:flex-none modern:px-0"
+            className="flex-1 modern:order-last modern:size-9 modern:flex-none modern:bg-fill modern:px-0 modern:text-destructive modern:hover:bg-destructive/15"
             disabled={busy || loadingAction !== null}
             onClick={() => setConfirmAction("kill")}
             aria-label="Kill server"
@@ -296,15 +320,35 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
             )}
             <span className="modern:sr-only">Kill</span>
           </Button>
+          {!deleting && (
+            <Button
+              size="sm"
+              asChild
+              className="hidden modern:flex modern:h-9 modern:flex-1 modern:bg-tint-bg modern:text-tint modern:hover:bg-tint-bg"
+            >
+              <Link href={`/servers/${server.id}`}>
+                <Settings className="size-3.5" />
+                Manage
+              </Link>
+            </Button>
+          )}
         </div>
 
         {deleting ? (
-          <Button variant="outline" size="sm" className="w-full" disabled>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full modern:hidden"
+            disabled
+          >
             <Settings className="size-3.5" />
             Manage
           </Button>
         ) : (
-          <Link href={`/servers/${server.id}`} className="block w-full">
+          <Link
+            href={`/servers/${server.id}`}
+            className="block w-full modern:hidden"
+          >
             <Button variant="outline" size="sm" className="w-full">
               <Settings className="size-3.5" />
               Manage

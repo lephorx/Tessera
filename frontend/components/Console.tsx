@@ -1,12 +1,29 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
-import { Send, Trash2, Loader2 } from "lucide-react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { Send, Trash2, Loader2, Search } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
+import { cn } from "@/lib/utils"
+
+type Level = "all" | "error" | "warn" | "info"
+
+// Java logs "[12:00:01] [Server thread/WARN]: …", Bedrock "… WARN] …"
+function levelOf(line: string): Exclude<Level, "all"> {
+  if (/\b(ERROR|FATAL|SEVERE)\]|\[(ERROR|FATAL|SEVERE)\b/.test(line))
+    return "error"
+  if (/\bWARN(ING)?\]|\[WARN(ING)?\b/.test(line)) return "warn"
+  return "info"
+}
+
+const LEVEL_TEXT = {
+  error: "modern:text-[#ff8a8a]",
+  warn: "modern:text-[#ffc27a]",
+  info: "",
+} as const
 
 interface Props {
   serverId: number
@@ -22,6 +39,9 @@ export function Console({ serverId, isRunning }: Props) {
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [live, setLive] = useState(false)
+  // modern: search and level filter for the output
+  const [query, setQuery] = useState("")
+  const [level, setLevel] = useState<Level>("all")
   const scrollRef = useRef<HTMLDivElement>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -165,16 +185,35 @@ export function Console({ serverId, isRunning }: Props) {
     }
   }
 
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return logs
+      .map((line, i) => ({ line, i, level: levelOf(line) }))
+      .filter(
+        (entry) =>
+          (level === "all" || entry.level === level) &&
+          (!needle || entry.line.toLowerCase().includes(needle))
+      )
+  }, [logs, query, level])
+  const filtering = level !== "all" || query.trim() !== ""
+
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col modern:gap-3 modern:p-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <div className="flex items-center justify-between border-b border-border px-4 py-2 modern:border-0 modern:p-0">
+        <div className="flex items-center gap-2 modern:gap-2.5">
+          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase modern:text-[16px] modern:font-bold modern:tracking-[-0.01em] modern:text-foreground modern:normal-case">
             Console
           </span>
           <span
-            className={`flex items-center gap-1 text-[10px] ${live ? "text-emerald-500" : "text-muted-foreground"}`}
+            className={cn(
+              "flex items-center gap-1 text-[10px]",
+              live ? "text-emerald-500" : "text-muted-foreground",
+              "modern:h-5 modern:rounded-full modern:px-2 modern:text-[11px] modern:font-semibold",
+              live
+                ? "modern:bg-status-green/15 modern:text-status-green"
+                : "modern:bg-surface-2"
+            )}
           >
             <span
               className={`size-1.5 rounded-full ${live ? "animate-pulse bg-emerald-500" : "bg-zinc-400"}`}
@@ -193,11 +232,53 @@ export function Console({ serverId, isRunning }: Props) {
         </Button>
       </div>
 
+      {/* modern: find a line, or show one level only */}
+      <div className="hidden flex-col gap-2 modern:flex">
+        <label className="relative block">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <span className="sr-only">Search logs</span>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search logs"
+            className="pl-9 modern:pl-9"
+          />
+        </label>
+        <div
+          role="radiogroup"
+          aria-label="Show lines"
+          className="flex items-center gap-1.5"
+        >
+          {(["all", "error", "warn", "info"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={level === value}
+              onClick={() => setLevel(value)}
+              className={cn(
+                "h-7 rounded-[8px] border px-2.5 text-[12px] font-semibold capitalize transition-[background-color,color,border-color,scale] active:scale-95",
+                level === value
+                  ? "border-transparent bg-tint-bg text-tint"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {value}
+            </button>
+          ))}
+          {filtering && (
+            <span className="ml-auto text-[12px] text-muted-foreground tabular-nums">
+              {shown.length} of {logs.length} lines
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Log output */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-[420px] overflow-y-auto bg-zinc-950 p-4 font-mono text-xs leading-relaxed text-zinc-200"
+        className="h-[420px] overflow-y-auto bg-zinc-950 p-4 font-mono text-xs leading-relaxed text-zinc-200 modern:rounded-[12px] modern:bg-[#121418] modern:text-[12.5px] modern:leading-[1.65] modern:text-[#d4d8de]"
         aria-live="polite"
         aria-label="Server console output"
       >
@@ -205,9 +286,14 @@ export function Console({ serverId, isRunning }: Props) {
           <span className="text-zinc-500">Loading logs…</span>
         ) : logs.length === 0 ? (
           <span className="text-zinc-500">No output yet.</span>
+        ) : shown.length === 0 ? (
+          <span className="text-zinc-500">No lines match.</span>
         ) : (
-          logs.map((line, i) => (
-            <div key={i} className="break-all whitespace-pre-wrap">
+          shown.map(({ line, i, level }) => (
+            <div
+              key={i}
+              className={cn("break-all whitespace-pre-wrap", LEVEL_TEXT[level])}
+            >
               {line}
             </div>
           ))
@@ -217,13 +303,13 @@ export function Console({ serverId, isRunning }: Props) {
       {/* Command input */}
       <form
         onSubmit={sendCommand}
-        className="flex items-center gap-2 border-t border-border bg-zinc-950 px-4 py-2"
+        className="flex items-center gap-2 border-t border-border bg-zinc-950 px-4 py-2 modern:rounded-[12px] modern:border-0 modern:bg-[#121418] modern:py-1.5 modern:pr-1.5 modern:focus-within:ring-2 modern:focus-within:ring-ring/60"
       >
         <span className="shrink-0 font-mono text-xs text-muted-foreground select-none">
           &gt;
         </span>
         <Input
-          className="flex-1 border-none bg-transparent font-mono text-xs text-zinc-200 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
+          className="flex-1 border-none bg-transparent font-mono text-xs text-zinc-200 shadow-none placeholder:text-zinc-600 focus-visible:ring-0 modern:bg-transparent! modern:px-1 modern:focus-visible:bg-transparent"
           placeholder={isRunning ? "Enter command…" : "Server is not running"}
           value={command}
           onChange={(e) => setCommand(e.target.value)}

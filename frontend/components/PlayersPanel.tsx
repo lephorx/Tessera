@@ -165,12 +165,14 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col gap-3 border border-border p-4">
+    <div className="inset flex flex-col gap-3 border border-border p-4 modern:p-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase modern:text-[15px] modern:font-bold modern:tracking-[-0.01em] modern:text-foreground modern:normal-case">
           {title}
         </h3>
-        <span className="text-xs text-muted-foreground">{count}</span>
+        <span className="text-xs text-muted-foreground tabular-nums modern:flex modern:h-6 modern:min-w-6 modern:items-center modern:justify-center modern:rounded-full modern:bg-card modern:px-2 modern:font-semibold">
+          {count}
+        </span>
       </div>
       {children}
     </div>
@@ -631,7 +633,7 @@ function PlayerDetailDialog({
             )}
 
             {/* Stats */}
-            <div className="flex flex-col gap-3 rounded border border-border p-3">
+            <div className="inset flex flex-col gap-3 rounded border border-border p-3 modern:p-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
@@ -661,7 +663,7 @@ function PlayerDetailDialog({
             </div>
 
             {/* Quick Actions */}
-            <div className="flex flex-col gap-2 rounded border border-border p-3">
+            <div className="inset flex flex-col gap-2 rounded border border-border p-3 modern:p-4">
               <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
                 Actions
               </span>
@@ -911,7 +913,7 @@ function PlayerDetailDialog({
             </div>
 
             {/* Position & Teleport */}
-            <div className="flex flex-col gap-2 rounded border border-border p-3">
+            <div className="inset flex flex-col gap-2 rounded border border-border p-3 modern:p-4">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
                   <MapPin className="size-3" />
@@ -976,7 +978,7 @@ function PlayerDetailDialog({
             </div>
 
             {/* Statistics */}
-            <div className="flex flex-col gap-2 rounded border border-border p-3">
+            <div className="inset flex flex-col gap-2 rounded border border-border p-3 modern:p-4">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
                   <BarChart2 className="size-3" />
@@ -1214,7 +1216,7 @@ function PlayerDetailDialog({
             <Separator />
 
             {/* Data Management */}
-            <div className="flex flex-col gap-2 rounded border border-destructive/30 p-3">
+            <div className="flex flex-col gap-2 rounded border border-destructive/30 p-3 modern:rounded-[14px] modern:p-4">
               <span className="flex items-center gap-1 text-[10px] font-semibold tracking-wider text-destructive/70 uppercase">
                 <Database className="size-3" />
                 Data Management
@@ -1585,13 +1587,13 @@ export function PlayersPanel({ serverId, isRunning, serverType }: Props) {
 
       {/* Player History — sourced from usercache.json, which is Java-only */}
       {!isBedrock && (
-        <div className="border border-border p-4">
+        <div className="inset border border-border p-4 modern:p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              <Clock className="size-3" />
+            <h3 className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase modern:gap-2 modern:text-[15px] modern:font-bold modern:tracking-[-0.01em] modern:text-foreground modern:normal-case">
+              <Clock className="size-3 modern:size-4 modern:text-tint" />
               Player History
             </h3>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground tabular-nums modern:flex modern:h-6 modern:min-w-6 modern:items-center modern:justify-center modern:rounded-full modern:bg-card modern:px-2 modern:font-semibold">
               {history.length}
             </span>
           </div>
@@ -1605,7 +1607,7 @@ export function PlayersPanel({ serverId, isRunning, serverType }: Props) {
               {history.map((p) => (
                 <button
                   key={p.uuid}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+                  className="flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-muted/60 modern:rounded-[10px] modern:py-2 modern:hover:bg-card"
                   onClick={() => setSelectedPlayer(p.name)}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}

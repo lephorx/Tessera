@@ -2,10 +2,18 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Server, LogOut, Settings, RefreshCw } from "lucide-react"
+import { usePathname } from "next/navigation"
+import { LayoutGrid, LogOut, RefreshCw, Server, Settings } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { UpdateBanner } from "@/components/UpdateBanner"
+import { cn } from "@/lib/utils"
+
+// modern: the main places, as pills in the middle of the bar
+const NAV = [
+  { href: "/", label: "Servers", icon: LayoutGrid },
+  { href: "/settings", label: "Settings", icon: Settings },
+]
 
 interface Props {
   user?: { id: number; username: string; is_admin?: boolean } | null
@@ -14,6 +22,8 @@ interface Props {
 
 export function TopNav({ user, onLogout }: Props) {
   const [updateCheck, setUpdateCheck] = useState(0)
+  const pathname = usePathname()
+  const section = pathname.startsWith("/settings") ? "/settings" : "/"
   // modern: the bar's edge only shows once content scrolls under it
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
@@ -29,16 +39,43 @@ export function TopNav({ user, onLogout }: Props) {
         data-scrolled={scrolled}
         className="border-b border-border bg-background modern:sticky modern:top-0 modern:z-40 modern:border-transparent modern:material modern:transition-[border-color,background-color] modern:duration-300 modern:data-[scrolled=false]:bg-background modern:data-[scrolled=true]:border-separator"
       >
-        <div className="mx-auto flex h-14 max-w-screen-xl items-center justify-between px-6 modern:h-13">
+        <div className="mx-auto flex h-14 max-w-screen-xl items-center justify-between px-6 modern:h-16 modern:gap-4">
           <Link
             href="/"
-            className="flex items-center gap-2.5 text-sm font-semibold tracking-tight transition-opacity hover:opacity-80 modern:text-[15px]"
+            className="flex items-center gap-2.5 text-sm font-semibold tracking-tight transition-opacity hover:opacity-80 modern:text-[17px] modern:font-extrabold"
           >
-            <span className="modern:flex modern:size-7 modern:items-center modern:justify-center modern:rounded-[8px] modern:bg-linear-to-b modern:from-[#3b8cff] modern:to-[#0062e0] modern:shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.25)]">
-              <Server className="size-4 text-primary modern:size-[15px] modern:text-white" />
+            <span className="modern:flex modern:size-8 modern:items-center modern:justify-center modern:rounded-[10px] modern:bg-linear-to-br modern:from-[#4f8dff] modern:to-[#1d4ed8] modern:shadow-[0_4px_14px_rgb(37_99_235/0.35),inset_0_0_0_1px_rgb(255_255_255/0.18)]">
+              <Server className="size-4 text-primary modern:size-[17px] modern:text-white" />
             </span>
             <span>CSCM</span>
           </Link>
+
+          {user && (
+            <nav
+              aria-label="Main"
+              className="hidden flex-1 items-center justify-center gap-1 modern:sm:flex"
+            >
+              {NAV.map(({ href, label, icon: Icon }) => {
+                const current = section === href
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    aria-current={current ? "page" : undefined}
+                    className={cn(
+                      "flex h-10 items-center gap-2 rounded-[12px] px-3.5 text-[14px] font-semibold transition-colors",
+                      current
+                        ? "bg-tint-bg text-tint"
+                        : "text-muted-foreground hover:bg-fill hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="size-[18px]" />
+                    {label}
+                  </Link>
+                )
+              })}
+            </nav>
+          )}
 
           <div className="flex items-center gap-3 modern:gap-1">
             {user && (
@@ -78,7 +115,7 @@ export function TopNav({ user, onLogout }: Props) {
                 variant="ghost"
                 size="icon"
                 asChild
-                className="modern:text-muted-foreground modern:hover:text-foreground"
+                className="modern:text-muted-foreground modern:hover:text-foreground modern:sm:hidden"
               >
                 <Link href="/settings" aria-label="Settings" title="Settings">
                   <Settings className="size-4" />

@@ -291,7 +291,7 @@ export default function DashboardPage() {
             {/* modern: placeholder cards in the shape of the real ones */}
             <div
               aria-hidden
-              className="hidden gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 modern:grid"
+              className="hidden gap-4 sm:grid-cols-2 lg:grid-cols-3 modern:grid"
             >
               {[0, 1, 2].map((i) => (
                 <div
@@ -322,7 +322,7 @@ export default function DashboardPage() {
             </Button>
           </div>
         ) : (
-          <div className="stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 modern:gap-5">
+          <div className="stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 modern:gap-4 modern:xl:grid-cols-3">
             {cards.map((server) => (
               <ServerCard
                 key={server.id}

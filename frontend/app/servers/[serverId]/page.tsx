@@ -9,14 +9,25 @@ import {
 } from "next/navigation"
 import Link from "next/link"
 import {
+  Activity,
+  Archive,
   ArrowLeft,
+  FolderOpen,
+  Hash,
+  Link2,
   Loader2,
-  Globe,
   Pencil,
+  Play,
+  RotateCw,
   Settings2,
+  Skull,
+  SlidersHorizontal,
+  Square,
   RefreshCw,
+  Terminal,
   TriangleAlert,
   Trash2,
+  Users,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -45,6 +56,8 @@ import { VersionPicker } from "@/components/VersionPicker"
 import { CopyButton } from "@/components/CopyButton"
 import { AppearancePanel } from "@/components/AppearancePanel"
 import { ServerIcon } from "@/components/ServerIcon"
+import { StatCards } from "@/components/StatCards"
+import { serverTypeInfo } from "@/components/Chip"
 import {
   ServerStateBadge,
   TRANSITIONAL_STATES,
@@ -644,16 +657,52 @@ export default function ServerDetailPage() {
               />
               <div className="flex flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-xl font-semibold modern:text-[28px] modern:leading-tight modern:font-bold">
+                  <h1 className="text-xl font-semibold modern:text-[28px] modern:leading-tight modern:font-extrabold">
                     {server.name}
                   </h1>
                   <ServerStateBadge state={state} />
                 </div>
-                <p className="hidden text-[13px] text-muted-foreground capitalize modern:block">
-                  {server.type} · {server.version}
-                  {server.loader_version ? ` / ${server.loader_version}` : ""} ·
-                  Port {server.port}
-                </p>
+                {/* modern: what it is and where to find it, with icons */}
+                <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-medium text-muted-foreground modern:flex">
+                  {(() => {
+                    const type = serverTypeInfo(server.type)
+                    return (
+                      <span className="flex items-center gap-1.5">
+                        <type.icon
+                          className="size-3.5 text-[color-mix(in_srgb,var(--chip)_55%,black)] dark:text-(--chip)"
+                          style={
+                            { "--chip": type.color } as React.CSSProperties
+                          }
+                        />
+                        {type.label}{" "}
+                        {server.version === "LATEST"
+                          ? "Latest"
+                          : server.version}
+                        {server.loader_version
+                          ? ` · ${server.loader_version}`
+                          : ""}
+                      </span>
+                    )
+                  })()}
+                  {serverConnectAddress(server) && (
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span aria-hidden className="text-border">
+                        •
+                      </span>
+                      <Link2 className="size-3.5" />
+                      <span className="truncate">
+                        {serverConnectAddress(server)}
+                      </span>
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden className="text-border">
+                      •
+                    </span>
+                    <Hash className="size-3.5" />
+                    <span className="tabular-nums">{server.port}</span>
+                  </span>
+                </div>
               </div>
             </div>
             <p className="text-xs text-muted-foreground capitalize modern:hidden">
@@ -678,20 +727,23 @@ export default function ServerDetailPage() {
           </div>
 
           {/* Control buttons */}
-          {/* modern: tinted, and only the start or stop that applies */}
+          {/* modern: filled like a hosting panel, only the start or stop
+              that applies; kill and delete stay quiet */}
           <div className="flex flex-wrap items-center gap-2 modern:self-end">
             <Button
               size="sm"
               className={cn(
                 "bg-emerald-600 text-white hover:bg-emerald-700",
-                "modern:h-8 modern:bg-status-green/15 modern:px-4 modern:text-status-green modern:hover:bg-status-green/25",
+                "modern:h-9 modern:bg-fill-green modern:px-4 modern:text-on-fill modern:hover:bg-fill-green",
                 isRunning && "modern:hidden"
               )}
               disabled={isRunning || loadingAction !== null}
               onClick={() => execAction("start")}
             >
-              {loadingAction === "start" && (
+              {loadingAction === "start" ? (
                 <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Play className="hidden size-3.5 modern:block" />
               )}
               Start
             </Button>
@@ -699,46 +751,54 @@ export default function ServerDetailPage() {
               size="sm"
               className={cn(
                 "bg-amber-500 text-white hover:bg-amber-600",
-                "modern:h-8 modern:bg-status-orange/15 modern:px-4 modern:text-status-orange modern:hover:bg-status-orange/25",
+                "modern:order-2 modern:h-9 modern:bg-fill-red modern:px-4 modern:text-on-fill modern:hover:bg-fill-red",
                 !isRunning && "modern:hidden"
               )}
               disabled={!isRunning || loadingAction !== null}
               onClick={() => setConfirmAction("stop")}
             >
-              {loadingAction === "stop" && (
+              {loadingAction === "stop" ? (
                 <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Square className="hidden size-3.5 modern:block" />
               )}
               Stop
             </Button>
             <Button
               size="sm"
-              className="bg-blue-600 text-white hover:bg-blue-700 modern:h-8 modern:bg-status-blue/15 modern:px-4 modern:text-status-blue modern:hover:bg-status-blue/25"
+              className="bg-blue-600 text-white hover:bg-blue-700 modern:order-1 modern:h-9 modern:bg-fill-orange modern:px-4 modern:text-on-fill modern:hover:bg-fill-orange"
               disabled={!isRunning || loadingAction !== null}
               onClick={() => execAction("restart")}
             >
-              {loadingAction === "restart" && (
+              {loadingAction === "restart" ? (
                 <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <RotateCw className="hidden size-3.5 modern:block" />
               )}
               Restart
             </Button>
             <Button
               size="sm"
               variant="destructive"
-              className="modern:h-8 modern:px-4"
+              className="modern:order-3 modern:h-9 modern:bg-fill modern:px-3.5 modern:hover:bg-destructive/15"
               disabled={loadingAction !== null}
               onClick={() => setConfirmAction("kill")}
             >
-              {loadingAction === "kill" && (
+              {loadingAction === "kill" ? (
                 <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Skull className="hidden size-3.5 modern:block" />
               )}
               Kill
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="border-destructive text-destructive hover:bg-destructive/10 modern:h-8 modern:px-4 modern:text-destructive"
+              className="border-destructive text-destructive hover:bg-destructive/10 modern:order-4 modern:h-9 modern:px-3.5 modern:text-destructive modern:hover:bg-destructive/15"
               onClick={() => setDeleteOpen(true)}
+              aria-label="Delete server"
             >
+              <Trash2 className="hidden size-3.5 modern:block" />
               Delete
             </Button>
           </div>
@@ -913,6 +973,11 @@ export default function ServerDetailPage() {
           </div>
         )}
 
+        {/* modern: live numbers, like a hosting panel's overview */}
+        <div className="mb-5 hidden modern:block">
+          <StatCards stats={stats} />
+        </div>
+
         {/* Tabs */}
         <Tabs
           value={activeTab}
@@ -923,28 +988,46 @@ export default function ServerDetailPage() {
             variant="line"
             className="mb-0 w-full justify-start border-b border-border pb-0"
           >
-            <TabsTrigger value="console">Console</TabsTrigger>
-            <TabsTrigger value="files">Files</TabsTrigger>
-            <TabsTrigger value="stats">Stats</TabsTrigger>
-            <TabsTrigger value="players">Players</TabsTrigger>
-            <TabsTrigger value="properties">Properties</TabsTrigger>
-            <TabsTrigger value="backups">Backups</TabsTrigger>
+            <TabsTrigger value="console">
+              <Terminal className="hidden size-4 modern:block" />
+              Console
+            </TabsTrigger>
+            <TabsTrigger value="files">
+              <FolderOpen className="hidden size-4 modern:block" />
+              Files
+            </TabsTrigger>
+            <TabsTrigger value="stats">
+              <Activity className="hidden size-4 modern:block" />
+              Stats
+            </TabsTrigger>
+            <TabsTrigger value="players">
+              <Users className="hidden size-4 modern:block" />
+              Players
+            </TabsTrigger>
+            <TabsTrigger value="properties">
+              <SlidersHorizontal className="hidden size-4 modern:block" />
+              Properties
+            </TabsTrigger>
+            <TabsTrigger value="backups">
+              <Archive className="hidden size-4 modern:block" />
+              Backups
+            </TabsTrigger>
             <TabsTrigger value="settings">
-              <Settings2 className="size-3.5" />
+              <Settings2 className="size-3.5 modern:size-4" />
               Settings
             </TabsTrigger>
           </TabsList>
 
           <TabsContent
             value="console"
-            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
+            className="panel mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-[16px] modern:border-t modern:bg-card modern:shadow-surface"
           >
             <Console serverId={serverId} isRunning={isRunning} />
           </TabsContent>
 
           <TabsContent
             value="files"
-            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
+            className="panel mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-[16px] modern:border-t modern:bg-card modern:shadow-surface"
             style={{ minHeight: "480px" }}
           >
             <FileExplorer serverId={serverId} />
@@ -952,14 +1035,14 @@ export default function ServerDetailPage() {
 
           <TabsContent
             value="stats"
-            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
+            className="panel mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-[16px] modern:border-t modern:bg-card modern:shadow-surface"
           >
             <ServerStats stats={stats} loading={loadingServer} />
           </TabsContent>
 
           <TabsContent
             value="players"
-            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
+            className="panel mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-[16px] modern:border-t modern:bg-card modern:shadow-surface"
           >
             <PlayersPanel
               serverId={serverId}
@@ -970,7 +1053,7 @@ export default function ServerDetailPage() {
 
           <TabsContent
             value="properties"
-            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
+            className="panel mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-[16px] modern:border-t modern:bg-card modern:shadow-surface"
             style={{ minHeight: "480px" }}
           >
             <PropertiesPanel serverId={serverId} />
@@ -978,14 +1061,14 @@ export default function ServerDetailPage() {
 
           <TabsContent
             value="backups"
-            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
+            className="panel mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-[16px] modern:border-t modern:bg-card modern:shadow-surface"
           >
             <BackupsPanel serverId={serverId} />
           </TabsContent>
 
           <TabsContent
             value="settings"
-            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
+            className="panel mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-[16px] modern:border-t modern:bg-card modern:shadow-surface"
           >
             <div className="divide-y divide-border">
               <AppearancePanel

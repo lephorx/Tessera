@@ -1,4 +1,4 @@
-import { Geist, Geist_Mono, Montserrat } from "next/font/google"
+import { Geist_Mono, Inter, Montserrat } from "next/font/google"
 
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils"
 import { DESIGN_BOOT_SCRIPT } from "@/lib/designBoot"
 
 const montserrat = Montserrat({ subsets: ["latin"], variable: "--font-sans" })
+// the modern design's typeface; classic keeps Montserrat
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -28,7 +30,8 @@ export default function RootLayout({
         "dark antialiased",
         fontMono.variable,
         "font-sans",
-        montserrat.variable
+        montserrat.variable,
+        inter.variable
       )}
     >
       <head>
