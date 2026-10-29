@@ -43,7 +43,11 @@ import { Label } from "@/components/ui/label"
 import { VersionPicker } from "@/components/VersionPicker"
 import { api } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
-import { normalizeServer, serverConnectAddress } from "@/lib/utils"
+import {
+  DELETING_KEY,
+  normalizeServer,
+  serverConnectAddress,
+} from "@/lib/utils"
 import type { Server, ServerProgress, ServerStats as Stats } from "@/lib/types"
 
 const POLL_INTERVAL = 5000
@@ -229,7 +233,11 @@ export default function ServerDetailPage() {
     setDeleteOpen(false)
     try {
       await api.servers.delete(serverId)
-      toast.success("Deleting server. Progress is shown on the dashboard.")
+      // lets the dashboard confirm the deletion even if it finishes first
+      sessionStorage.setItem(
+        DELETING_KEY,
+        JSON.stringify({ id: serverId, name: server?.name ?? "The server" })
+      )
       window.location.href = "/"
     } catch (err) {
       toast.error(

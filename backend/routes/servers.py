@@ -232,7 +232,15 @@ def delete_server(server_id: int):
     progress_store.update(server_id, action="delete", percent=2, step="Deletion queued")
 
     def _bg_delete():
-        deprovision_server(server_id)
+        try:
+            result = deprovision_server(server_id)
+        except Exception as exc:
+            log.exception("Server deletion crashed: db_id=%d", server_id)
+            result = {"success": False, "message": str(exc)}
+        # otherwise the dashboard would show "Deleting…" forever
+        if not result.get("success"):
+            progress_store.update(server_id, action="delete", percent=100, step="Deletion failed",
+                                  status="failed", message=result.get("message"))
 
     threading.Thread(target=_bg_delete, daemon=True).start()
     log.info("Server deletion started (background): db_id=%d", server_id)

@@ -1,9 +1,16 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Plus, Loader2, ServerOff, Settings2 } from "lucide-react"
+import { CheckCircle2, Plus, Loader2, ServerOff, Settings2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { DefaultsEditor } from "@/components/DefaultsEditor"
 import { TopNav } from "@/components/TopNav"
 import { ServerCard } from "@/components/ServerCard"
@@ -14,10 +21,14 @@ import { SetupWizard } from "@/components/SetupWizard"
 import { api } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
 import { useServerCreation } from "@/hooks/useServerCreation"
-import { normalizeServer } from "@/lib/utils"
+import { DELETING_KEY, normalizeServer } from "@/lib/utils"
 import type { Server, ServerStats } from "@/lib/types"
 
 const POLL_INTERVAL = 5000
+// while a server is being created or deleted
+const FAST_POLL_INTERVAL = 1500
+// how long a deleted server's card stays at 100% before it's removed
+const FINISH_MS = 900
 
 export default function DashboardPage() {
   const {
@@ -56,6 +67,61 @@ export default function DashboardPage() {
   }, [authenticated, loadSetup])
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Servers being deleted (last seen card, or just the name when the
+  // deletion was started on the server page). Once one is gone from the
+  // list, its card runs to 100% and a confirmation is shown.
+  const deletingRef = useRef<Map<number, { name: string; card?: Server }>>(
+    new Map()
+  )
+  const [finishing, setFinishing] = useState<Server[]>([])
+  const [deletedNames, setDeletedNames] = useState<string[]>([])
+
+  const trackDeletions = useCallback((list: Server[]) => {
+    const tracked = deletingRef.current
+    const handoff = sessionStorage.getItem(DELETING_KEY)
+    if (handoff) {
+      sessionStorage.removeItem(DELETING_KEY)
+      try {
+        const { id, name } = JSON.parse(handoff)
+        if (!tracked.has(id)) tracked.set(id, { name })
+      } catch {
+        // ignore a malformed entry
+      }
+    }
+
+    const present = new Set(list.map((s) => s.id))
+    const done = [...tracked.entries()].filter(([id]) => !present.has(id))
+    for (const s of list) {
+      if (
+        s.progress?.action === "delete" &&
+        s.progress.status === "in_progress"
+      )
+        tracked.set(s.id, { name: s.name, card: s })
+      else if (s.progress?.status === "failed") tracked.delete(s.id)
+    }
+    if (!done.length) return
+
+    for (const [id] of done) tracked.delete(id)
+    const cards: Server[] = done.flatMap(([, d]) =>
+      d.card
+        ? [
+            {
+              ...d.card,
+              progress: { ...d.card.progress!, percent: 100, step: "Deleted" },
+            },
+          ]
+        : []
+    )
+    setFinishing((prev) => [...prev, ...cards])
+    setTimeout(
+      () => {
+        setFinishing((prev) => prev.filter((c) => !cards.includes(c)))
+        setDeletedNames((prev) => [...prev, ...done.map(([, d]) => d.name)])
+      },
+      cards.length ? FINISH_MS : 0
+    )
+  }, [])
+
   const fetchServers = useCallback(async () => {
     try {
       const res = await api.servers.list()
@@ -63,6 +129,7 @@ export default function DashboardPage() {
         normalizeServer
       )
       setServers(list)
+      trackDeletions(list)
       // fetch stats in parallel
       const statsEntries = await Promise.allSettled(
         list.map((s) =>
@@ -84,7 +151,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [trackDeletions])
 
   const {
     task: creationTask,
@@ -92,14 +159,21 @@ export default function DashboardPage() {
     dismiss: dismissCreation,
   } = useServerCreation(fetchServers)
 
+  const anyBusy =
+    finishing.length > 0 ||
+    servers.some((s) => s.progress?.status === "in_progress")
+
   useEffect(() => {
     if (!authenticated) return
     fetchServers()
-    intervalRef.current = setInterval(fetchServers, POLL_INTERVAL)
+    intervalRef.current = setInterval(
+      fetchServers,
+      anyBusy ? FAST_POLL_INTERVAL : POLL_INTERVAL
+    )
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [fetchServers, authenticated])
+  }, [fetchServers, authenticated, anyBusy])
 
   // Auto-dismiss a completed creation — quickly if the modal is still open
   // (it's about to show a "View Server" button anyway), longer if it's just
@@ -167,6 +241,11 @@ export default function DashboardPage() {
     )
   }
 
+  const cards = [
+    ...servers,
+    ...finishing.filter((f) => !servers.some((s) => s.id === f.id)),
+  ].sort((a, b) => a.id - b.id)
+
   return (
     <div className="min-h-screen bg-background">
       <TopNav user={user} onLogout={logout} />
@@ -179,7 +258,7 @@ export default function DashboardPage() {
             <p className="mt-0.5 text-sm text-muted-foreground">
               {loading
                 ? "Loading…"
-                : `${servers.length} server${servers.length !== 1 ? "s" : ""}`}
+                : `${cards.length} server${cards.length !== 1 ? "s" : ""}`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -199,7 +278,7 @@ export default function DashboardPage() {
           <div className="flex h-48 items-center justify-center">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
-        ) : servers.length === 0 ? (
+        ) : cards.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 text-muted-foreground">
             <ServerOff className="size-10 opacity-40" />
             <p className="text-sm">No servers yet.</p>
@@ -210,7 +289,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {servers.map((server) => (
+            {cards.map((server) => (
               <ServerCard
                 key={server.id}
                 server={server}
@@ -230,6 +309,29 @@ export default function DashboardPage() {
         onDismiss={dismissCreation}
         publicAvailable={setup.public_available}
       />
+
+      {/* Confirms finished deletions, one at a time */}
+      <Dialog open={deletedNames.length > 0}>
+        <DialogContent className="sm:max-w-sm" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="size-5 text-emerald-500" />
+              Server deleted
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {deletedNames[0]}
+            </span>{" "}
+            was successfully deleted.
+          </p>
+          <DialogFooter>
+            <Button onClick={() => setDeletedNames((prev) => prev.slice(1))}>
+              Acknowledged
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Floating progress — shown when modal is closed but creation is still running */}
       {creationTask && !createOpen && (

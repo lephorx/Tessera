@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import Link from "next/link"
 import {
   Loader2,
@@ -35,6 +35,26 @@ interface Props {
 
 type Action = "stop" | "kill" | null
 
+// The backend reports few, uneven steps (deleting sits at "Stopping
+// container" for most of the time), so the bar creeps towards 95% on its own
+// between polls, never drops below the real value, and only runs to 100%
+// once the work is really done.
+function useSmoothPercent(real: number, active: boolean) {
+  const [shown, setShown] = useState(real)
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => {
+      setShown((prev) =>
+        real >= 100
+          ? Math.min(100, prev + Math.max(5, (100 - prev) * 0.4))
+          : Math.max(real, prev + (95 - prev) * 0.008)
+      )
+    }, 200)
+    return () => clearInterval(id)
+  }, [real, active])
+  return Math.round(active ? Math.max(shown, real) : real)
+}
+
 export function ServerCard({ server, stats, onRefresh }: Props) {
   const [loadingAction, setLoadingAction] = useState<
     "start" | "stop" | "kill" | null
@@ -45,6 +65,7 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
   const progress = server.progress
   const busy = progress?.status === "in_progress"
   const deleting = busy && progress?.action === "delete"
+  const percent = useSmoothPercent(progress?.percent ?? 0, busy)
 
   const statusDot = isRunning ? "bg-emerald-500" : "bg-zinc-400"
 
@@ -141,11 +162,11 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
               </span>
               {busy && (
                 <span className="shrink-0 text-muted-foreground tabular-nums">
-                  {progress.percent}%
+                  {percent}%
                 </span>
               )}
             </div>
-            {busy && <Progress value={progress.percent} className="h-1" />}
+            {busy && <Progress value={percent} className="h-1" />}
           </div>
         )}
 
@@ -226,12 +247,19 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
           </Button>
         </div>
 
-        <Link href={`/servers/${server.id}`} className="block w-full">
-          <Button variant="outline" size="sm" className="w-full">
+        {deleting ? (
+          <Button variant="outline" size="sm" className="w-full" disabled>
             <Settings className="size-3.5" />
             Manage
           </Button>
-        </Link>
+        ) : (
+          <Link href={`/servers/${server.id}`} className="block w-full">
+            <Button variant="outline" size="sm" className="w-full">
+              <Settings className="size-3.5" />
+              Manage
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Confirm dialog */}

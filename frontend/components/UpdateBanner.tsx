@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowUpCircle, Loader2, TriangleAlert } from "lucide-react"
+import { ArrowUpCircle, Loader2, TriangleAlert, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -47,6 +47,8 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
   const [phase, setPhase] = useState<Phase>("idle")
   const [log, setLog] = useState<string[]>([])
   const [error, setError] = useState("")
+  // version the user hid the banner for (until reload or a manual check)
+  const [hiddenFor, setHiddenFor] = useState<string | null>(null)
   const fromVersion = useRef("")
   const logEnd = useRef<HTMLDivElement>(null)
 
@@ -65,6 +67,7 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
       .version(true)
       .then((v: VersionInfo) => {
         setInfo(v)
+        setHiddenFor(null)
         if (v.update_available) {
           if (v.can_update) setPhase("confirm")
           else toast.info(`CSCM ${v.latest} is available. ${v.reason ?? ""}`)
@@ -146,10 +149,11 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
 
   return (
     <>
-      {info?.update_available && (
-        <div className="border-b border-primary/30 bg-primary/10">
-          <div className="mx-auto flex max-w-screen-xl flex-wrap items-center justify-between gap-3 px-6 py-2.5">
-            <p className="flex items-center gap-2 text-sm">
+      {/* floats over the page, so it never shifts the layout */}
+      {info?.update_available && (busy || hiddenFor !== info.latest) && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="pointer-events-auto flex w-full max-w-lg flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-card px-4 py-2.5 shadow-lg">
+            <p className="flex flex-1 items-center gap-2 text-sm">
               <ArrowUpCircle className="size-4 shrink-0 text-primary" />
               <span>
                 <span className="font-medium">CSCM {info.latest}</span> is
@@ -174,6 +178,18 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
               >
                 {info.reason} How to update manually
               </a>
+            )}
+            {!busy && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7 text-muted-foreground"
+                aria-label="Hide"
+                title="Hide until the next check"
+                onClick={() => setHiddenFor(info.latest)}
+              >
+                <X className="size-3.5" />
+              </Button>
             )}
           </div>
         </div>

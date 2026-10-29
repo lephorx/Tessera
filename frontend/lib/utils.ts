@@ -45,7 +45,10 @@ export function parsePlayersRaw(raw: string | null | undefined): ParsedPlayers {
 // instead of Java's players_raw text. Unifies both into the same shape —
 // Bedrock has no reported max-players, so `max` is always null there.
 export function parsePlayers(
-  stats: Pick<ServerStats, "players_raw" | "players_online" | "player_count"> | null | undefined
+  stats:
+    | Pick<ServerStats, "players_raw" | "players_online" | "player_count">
+    | null
+    | undefined
 ): ParsedPlayers {
   if (stats?.players_online) {
     return {
@@ -68,10 +71,19 @@ export function normalizeServer(raw: Server): Server {
   }
 }
 
+// sessionStorage key: { id, name } of a server whose deletion was just started
+export const DELETING_KEY = "cscm-deleting"
+
 export function serverConnectAddress(server: Server): string | null {
   const cname = server.dns_records?.find((record) => record.type === "CNAME")
-  const srvReady = server.type === "bedrock" || server.dns_records?.some((record) => record.type === "SRV")
-  return (cname && srvReady ? cname.name : null) ?? server.tunnels?.[0]?.address ?? null
+  const srvReady =
+    server.type === "bedrock" ||
+    server.dns_records?.some((record) => record.type === "SRV")
+  return (
+    (cname && srvReady ? cname.name : null) ??
+    server.tunnels?.[0]?.address ??
+    null
+  )
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
