@@ -30,6 +30,7 @@ import { AuthPage, AuthStatusError } from "@/components/AuthPage"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
+import { Progress } from "@/components/ui/progress"
 import {
   Dialog,
   DialogContent,
@@ -43,7 +44,7 @@ import { VersionPicker } from "@/components/VersionPicker"
 import { api } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
 import { normalizeServer, serverConnectAddress } from "@/lib/utils"
-import type { Server, ServerStats as Stats } from "@/lib/types"
+import type { Server, ServerProgress, ServerStats as Stats } from "@/lib/types"
 
 const POLL_INTERVAL = 5000
 
@@ -73,6 +74,8 @@ export default function ServerDetailPage() {
   )
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [tunneling, setTunneling] = useState(false)
+  // latest polled setup / tunnel progress while one runs
+  const [liveProgress, setLiveProgress] = useState<ServerProgress | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
   const [renameValue, setRenameValue] = useState("")
   const [renaming, setRenaming] = useState(false)
@@ -168,6 +171,33 @@ export default function ServerDetailPage() {
 
   const isRunning = stats?.running ?? false
 
+  // Follow tunnel creation (and the setup of a new server) step by step.
+  const watching = tunneling || server?.progress?.status === "in_progress"
+  useEffect(() => {
+    if (!watching) return
+    const id = setInterval(async () => {
+      try {
+        const p = await api.servers.progress(serverId)
+        if (p?.status === "in_progress") {
+          setLiveProgress(p)
+          return
+        }
+        setLiveProgress(null)
+        setTunneling(false)
+        if (p?.action === "tunnel" && p.status === "completed")
+          toast.success(p.message ?? p.step ?? "Public address ready")
+        if (p?.action === "tunnel" && p.status === "failed")
+          toast.error(p.message ?? "Tunnel creation failed")
+        const res = await api.servers.get(serverId)
+        const found: Server | undefined = res?.server ?? res?.data ?? res
+        if (found) setServer(normalizeServer(found))
+      } catch {
+        // keep polling
+      }
+    }, 1500)
+    return () => clearInterval(id)
+  }, [watching, serverId])
+
   async function execAction(action: "start" | "stop" | "restart" | "kill") {
     setLoadingAction(action)
     try {
@@ -260,18 +290,22 @@ export default function ServerDetailPage() {
 
   async function handleSetupTunnel() {
     setTunneling(true)
+    setLiveProgress({
+      action: "tunnel",
+      status: "in_progress",
+      percent: 2,
+      step: "Starting tunnel creation",
+      message: null,
+    })
     try {
-      const result = (await api.control.tunnel(serverId)) as {
-        warning?: string
-      }
-      toast.success(result.warning ?? "Public address ready")
-      await refreshServerMeta()
+      // starts in the background; the effect above follows the progress
+      await api.control.tunnel(serverId)
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to set up tunnel"
       )
-    } finally {
       setTunneling(false)
+      setLiveProgress(null)
     }
   }
 
@@ -423,6 +457,21 @@ export default function ServerDetailPage() {
 
   if (!server) return null
 
+  const progress = liveProgress ?? server.progress ?? null
+  const setupProgress = progress?.status === "in_progress" &&
+    progress.action !== "delete" && (
+      <div className="mt-3 space-y-1.5">
+        <div className="flex items-center justify-between gap-3 text-[11px]">
+          <span className="flex min-w-0 items-center gap-1.5 text-foreground">
+            <Loader2 className="size-3 shrink-0 animate-spin" />
+            <span className="truncate">{progress.step ?? "Working…"}</span>
+          </span>
+          <span className="shrink-0 tabular-nums">{progress.percent}%</span>
+        </div>
+        <Progress value={progress.percent} className="h-1" />
+      </div>
+    )
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <TopNav user={user} onLogout={logout} />
@@ -516,6 +565,7 @@ export default function ServerDetailPage() {
                 Reachable from your local network. Set up a Playit tunnel for
                 public access.
               </p>
+              {setupProgress}
             </div>
             <Button
               size="sm"
@@ -524,7 +574,7 @@ export default function ServerDetailPage() {
               disabled={tunneling}
             >
               {tunneling && <Loader2 className="size-3.5 animate-spin" />}
-              Set up Playit tunnel
+              {tunneling ? "Creating tunnel…" : "Set up Playit tunnel"}
             </Button>
           </div>
         ) : server.tunnels.length > 0 ? (
@@ -603,7 +653,7 @@ export default function ServerDetailPage() {
                   </Button>
                 ) : (
                   <Button size="sm" variant="ghost" asChild>
-                    <Link href="/?settings=1">Set up Cloudflare</Link>
+                    <Link href="/settings">Set up Cloudflare</Link>
                   </Button>
                 )}
               </div>
@@ -611,15 +661,14 @@ export default function ServerDetailPage() {
           </div>
         ) : (
           <div className="mb-6 flex items-center justify-between gap-4 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-muted-foreground">
-            <p className="flex items-start gap-2">
+            <div className="flex flex-1 items-start gap-2">
               <TriangleAlert className="mt-px size-4 shrink-0 text-amber-500" />
-              <span>
+              <span className="flex-1">
                 <span className="block font-medium text-foreground">
                   No public address
                 </span>
-                {server.progress?.action === "provision" &&
-                server.progress.status === "in_progress"
-                  ? `Still being set up: ${server.progress.step ?? "working"} (${server.progress.percent}%)`
+                {setupProgress
+                  ? "The Playit tunnel is being created. This takes a minute or two."
                   : !server.playit_configured
                     ? "Playit isn't set up, so CSCM can't create a tunnel. Add your Playit account in Connection settings."
                     : (server.tunnel_error ??
@@ -631,8 +680,9 @@ export default function ServerDetailPage() {
                     : "—"}
                   :{server.port}.
                 </span>
+                {setupProgress}
               </span>
-            </p>
+            </div>
             <div className="flex shrink-0 gap-2">
               {server.playit_configured && (
                 <Button
@@ -650,7 +700,7 @@ export default function ServerDetailPage() {
                 variant={server.playit_configured ? "ghost" : "outline"}
                 asChild
               >
-                <Link href="/?settings=1">Connection settings</Link>
+                <Link href="/settings">Connection settings</Link>
               </Button>
             </div>
           </div>

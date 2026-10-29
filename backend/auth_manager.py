@@ -200,6 +200,99 @@ def complete_initial_user_setup(setup_token: str, otp_code: str) -> dict:
     return {"id": int(cursor.lastrowid), "username": str(pending["username"])}
 
 
+# ── user management (every user has full access) ───────────────────────────
+
+def _validate_credentials(username: str, password: str) -> str:
+    normalized_username = username.strip()
+    if len(normalized_username) < 3:
+        raise ValueError("Username must be at least 3 characters long")
+    if len(password) < 12:
+        raise ValueError("Password must be at least 12 characters long")
+    return normalized_username
+
+
+def list_users() -> list[dict]:
+    with closing(_connect()) as connection:
+        rows = connection.execute("SELECT id, username, created_at FROM users ORDER BY id").fetchall()
+    return [{"id": int(r["id"]), "username": str(r["username"]), "created_at": str(r["created_at"])} for r in rows]
+
+
+def user_exists(user_id: int) -> bool:
+    with closing(_connect()) as connection:
+        return connection.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone() is not None
+
+
+def begin_user_enrollment(username: str, password: str) -> dict:
+    """Start adding another user; finished by complete_user_enrollment with a TOTP code."""
+    normalized_username = _validate_credentials(username, password)
+    totp_secret = pyotp.random_base32()
+    setup_token = secrets.token_urlsafe(32)
+    now = int(_utcnow().timestamp())
+    with closing(_connect()) as connection:
+        if connection.execute("SELECT 1 FROM users WHERE username = ?", (normalized_username,)).fetchone():
+            raise RuntimeError(f"A user named '{normalized_username}' already exists")
+        connection.execute("DELETE FROM pending_setups WHERE expires_at <= ?", (now,))
+        connection.execute(
+            "INSERT INTO pending_setups (token, username, password_hash, totp_secret, expires_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (setup_token, normalized_username, generate_password_hash(password, method="scrypt"),
+             totp_secret, now + SETUP_TTL_SECONDS),
+        )
+        connection.commit()
+    return {"setup_token": setup_token, **build_totp_setup_payload(normalized_username, totp_secret)}
+
+
+def complete_user_enrollment(setup_token: str, otp_code: str) -> dict:
+    if len(otp_code) != 6 or not otp_code.isdigit():
+        raise ValueError("Enter the six-digit code from the authenticator app")
+    with closing(_connect()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        pending = connection.execute(
+            "SELECT username, password_hash, totp_secret, expires_at FROM pending_setups WHERE token = ?",
+            (setup_token,),
+        ).fetchone()
+        if pending is None or int(pending["expires_at"]) <= int(_utcnow().timestamp()):
+            raise ValueError("This sign-up expired. Start again.")
+        if not pyotp.TOTP(str(pending["totp_secret"])).verify(otp_code, valid_window=1):
+            raise ValueError("Invalid one-time code. Try the current code from the authenticator app.")
+        if connection.execute("SELECT 1 FROM users WHERE username = ?", (pending["username"],)).fetchone():
+            raise RuntimeError(f"A user named '{pending['username']}' already exists")
+        cursor = connection.execute(
+            "INSERT INTO users (username, password_hash, totp_secret, created_at) VALUES (?, ?, ?, ?)",
+            (pending["username"], pending["password_hash"], pending["totp_secret"], _utcnow().isoformat()),
+        )
+        connection.execute("DELETE FROM pending_setups WHERE token = ?", (setup_token,))
+        connection.commit()
+    return {"id": int(cursor.lastrowid), "username": str(pending["username"])}
+
+
+def delete_user(user_id: int, current_user_id: int) -> None:
+    if user_id == current_user_id:
+        raise ValueError("You can't remove your own account")
+    with closing(_connect()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        if connection.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone() is None:
+            raise LookupError("User not found")
+        if connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] <= 1:
+            raise ValueError("The last user can't be removed")
+        connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        connection.commit()
+
+
+def change_password(user_id: int, current_password: str, new_password: str) -> None:
+    if len(new_password) < 12:
+        raise ValueError("The new password must be at least 12 characters long")
+    with closing(_connect()) as connection:
+        row = connection.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None or not check_password_hash(str(row["password_hash"]), current_password):
+            raise PermissionError("The current password is wrong")
+        connection.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(new_password, method="scrypt"), user_id),
+        )
+        connection.commit()
+
+
 def build_totp_setup_payload(username: str, totp_secret: str) -> dict:
     issuer = os.getenv("TOTP_ISSUER", "CSCM Tool")
     uri = pyotp.TOTP(totp_secret).provisioning_uri(name=username, issuer_name=issuer)
@@ -263,7 +356,12 @@ def verify_jwt(token: str) -> dict | None:
         _log.warning("JWT verification failed: %s: %s", type(exc).__name__, exc)
         return None
 
+    user_id = int(payload["sub"])
+    # tokens of removed users stop working right away
+    if not user_exists(user_id):
+        _log.warning("JWT for a removed user: id=%d", user_id)
+        return None
     return {
-        "id": int(payload["sub"]),
+        "id": user_id,
         "username": str(payload["username"]),
     }

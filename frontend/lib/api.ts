@@ -69,6 +69,29 @@ export const api = {
     startAgent: () => apiCall("/settings/agent", { method: "POST" }),
     stopAgent: () => apiCall("/settings/agent", { method: "DELETE" }),
   },
+  users: {
+    list: () => apiCall("/users"),
+    // returns a QR code for the new user's authenticator app
+    add: (username: string, password: string) =>
+      apiCall("/users", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      }),
+    verify: (setupToken: string, otp: string) =>
+      apiCall("/users/verify", {
+        method: "POST",
+        body: JSON.stringify({ setup_token: setupToken, otp }),
+      }),
+    remove: (id: number) => apiCall(`/users/${id}`, { method: "DELETE" }),
+    changePassword: (currentPassword: string, newPassword: string) =>
+      apiCall("/users/me/password", {
+        method: "PUT",
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      }),
+  },
   setup: {
     get: () => apiCall("/setup"),
     update: (state: {
@@ -460,7 +483,11 @@ export const api = {
             } catch {
               // non-JSON body — fall through to the status-based error below
             }
-            if (xhr.status < 200 || xhr.status >= 300 || body?.success === false) {
+            if (
+              xhr.status < 200 ||
+              xhr.status >= 300 ||
+              body?.success === false
+            ) {
               const message =
                 (body?.message as string | undefined) ??
                 (body?.error as string | undefined) ??
@@ -502,10 +529,8 @@ export const api = {
       )
 
       if (failed.length === files.length) {
-        const reason =
-          results.find((r) => r.status === "rejected") as
-            | PromiseRejectedResult
-            | undefined
+        const reason = results.find((r) => r.status === "rejected") as
+          PromiseRejectedResult | undefined
         throw new Error(
           reason?.reason instanceof Error
             ? reason.reason.message

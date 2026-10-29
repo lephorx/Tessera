@@ -185,6 +185,59 @@ paths:
         "200": { description: OK }
         "401": { description: Unauthorized }
 
+  /api/users:
+    get:
+      tags: [Auth]
+      summary: List users (all users have full access)
+      responses: { "200": { description: Users and the caller's id } }
+    post:
+      tags: [Auth]
+      summary: Start adding a user; returns a TOTP QR code for them to scan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties: { username: { type: string }, password: { type: string, minLength: 12 } }
+      responses: { "202": { description: QR code and setup_token }, "400": { description: Invalid }, "409": { description: Username taken } }
+
+  /api/users/verify:
+    post:
+      tags: [Auth]
+      summary: Finish adding a user with their first one-time code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [setup_token, otp]
+              properties: { setup_token: { type: string }, otp: { type: string } }
+      responses: { "201": { description: User created }, "400": { description: Wrong or expired code } }
+
+  /api/users/{user_id}:
+    delete:
+      tags: [Auth]
+      summary: Remove a user (not yourself, not the last one); their sessions end at once
+      parameters: [{ name: user_id, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: Removed }, "400": { description: Not allowed }, "404": { description: Not found } }
+
+  /api/users/me/password:
+    put:
+      tags: [Auth]
+      summary: Change your own password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties: { current_password: { type: string }, new_password: { type: string, minLength: 12 } }
+      responses: { "200": { description: Changed }, "403": { description: Current password wrong } }
+
   /api/server-types:
     get:
       tags: [Servers]
@@ -969,8 +1022,10 @@ paths:
       tags: [Networking]
       summary: Create a PlayIT tunnel for an existing server
       description: >
-        Creates a PlayIT tunnel. Configured Cloudflare credentials add a custom
-        DNS address by default. Without Cloudflare, the PlayIT address is returned.
+        Starts creating a PlayIT tunnel in the background and returns 202. Poll
+        GET /api/servers/{id}/progress (action "tunnel") for each step and the
+        outcome; a failure reason is also kept in the server's tunnel_error.
+        Configured Cloudflare credentials add a custom DNS address by default.
         Bedrock players must enter the assigned port separately.
       parameters: [{ $ref: "#/components/parameters/ServerId" }]
       requestBody:
@@ -983,7 +1038,7 @@ paths:
                 subscription: { type: string, enum: [premium, free] }
                 agent: { type: string }
       responses:
-        { "201": { description: Created }, "404": { description: Not found }, "409": { description: Tunnel already exists } }
+        { "202": { description: Started }, "404": { description: Not found }, "409": { description: Tunnel already exists or setup in progress } }
 
   /api/servers/{id}/subdomain:
     patch:

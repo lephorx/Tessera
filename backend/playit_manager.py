@@ -17,6 +17,7 @@ import asyncio
 import os
 import sys
 import threading
+from typing import Callable
 import dns.resolver
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
@@ -81,7 +82,7 @@ def _fail(reason: str) -> None:
     _last.error = reason
 
 
-async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | None = None, subscription: str | None = None, agent: str | None = None, protocol: str = "java") -> str | None:
+async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | None = None, subscription: str | None = None, agent: str | None = None, protocol: str = "java", on_step: Callable[[str, float], None] | None = None) -> str | None:
     """Create a PlayIT tunnel with the given name and local port.
 
     Drives the playit.gg web UI to provision a new Minecraft tunnel.
@@ -98,6 +99,8 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
                Defaults to PLAYIT_AGENT env var or first available agent.
         protocol: "java" or "bedrock" — selects the matching protocol tile
                   in the playit.gg tunnel wizard.
+        on_step: Called as ``on_step(description, fraction)`` at each stage
+                 (fraction 0.0–1.0), so callers can show progress.
 
     Returns:
         The allocated public address — e.g. ``abc123.joinmc.link`` for Java
@@ -106,13 +109,21 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
         no SRV-based port discovery so playit embeds the port directly.
         ``None`` on failure.
     """
+    def at(description: str, fraction: float) -> str:
+        if on_step:
+            try:
+                on_step(description, fraction)
+            except Exception as exc:
+                log.debug("Progress callback failed: %s", exc)
+        return description
+
     _last.error = None
     if not _email() or not _password():
         log.error("PLAYIT_EMAIL and PLAYIT_PASSWORD environment variables are required")
         _fail("Your Playit email and password aren't set. Add them in Connection settings.")
         return None
 
-    step = "starting the browser"
+    step = at("starting the browser", 0.0)
     selected_region = region or _region()
     selected_subscription = (subscription or _subscription()).lower()
     selected_agent = agent or _agent()
@@ -139,7 +150,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             )
             page = await context.new_page()
 
-            step = "signing in to playit.gg"
+            step = at("signing in to playit.gg", 0.1)
             if not await _login(page):
                 _fail("Could not sign in to playit.gg. Check the email and password in Connection settings.")
                 await context.close()
@@ -148,7 +159,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
 
             await asyncio.sleep(1)
 
-            step = "opening the new tunnel page"
+            step = at("opening the new tunnel page", 0.3)
             log.debug("Navigating to Tunnels section")
             await page.goto("https://playit.gg/account/tunnels", wait_until="networkidle")
             await asyncio.sleep(1)
@@ -167,7 +178,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await page.click('button[type="submit"]')
             await asyncio.sleep(1)
 
-            step = "choosing the Minecraft protocol"
+            step = at("choosing the Minecraft protocol", 0.4)
             # Select protocol tile. All protocol tiles share the "_15pr4g97"
             # class (e.g. <div class="_15pr4g97"><img .../><span
             # class="_15pr4g9d">Minecraft Bedrock</span></div>); the label
@@ -186,7 +197,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await page.click('button[type="submit"]')
             await asyncio.sleep(1)
 
-            step = "choosing the region"
+            step = at("choosing the region", 0.5)
             # Select region. The step opens on the "Gateways" tab (premium
             # dedicated gateways); the shared regions live under the
             # "Playit Network" tab, so switch to it first.
@@ -211,7 +222,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await _click_next(page)
             await asyncio.sleep(1)
 
-            step = "choosing the Playit agent"
+            step = at("choosing the Playit agent", 0.6)
             # Select agent
             if not await _select_agent(page, selected_agent):
                 log.warning("Agent selection may have failed; continuing anyway")
@@ -222,7 +233,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await _click_next(page)
             await asyncio.sleep(1)
 
-            step = "setting the local port"
+            step = at("setting the local port", 0.7)
             # Set local port
             log.debug("Setting local port: %s", tunnel_port)
             await page.fill('input[placeholder="NULL"]', str(tunnel_port))
@@ -236,7 +247,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await page.click('button[type="submit"]')
             await asyncio.sleep(2)
 
-            step = "waiting for playit.gg to assign an address"
+            step = at("waiting for playit.gg to assign an address", 0.8)
             log.info("Waiting for tunnel address allocation")
             # Java addresses look like "abc123.joinmc.link" (no port — SRV
             # discovery handles that); Bedrock addresses embed the port

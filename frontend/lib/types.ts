@@ -40,7 +40,7 @@ export interface Server {
 }
 
 export interface ServerProgress {
-  action: "provision" | "delete"
+  action: "provision" | "delete" | "tunnel"
   status: "in_progress" | "failed"
   percent: number
   step: string | null

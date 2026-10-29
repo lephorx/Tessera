@@ -74,6 +74,15 @@ def active_progress(server_id: int) -> dict | None:
     return None
 
 
+def _tunnel_progress(server_id: int, action: str, start: int, end: int):
+    """on_step callback for create_tunnel that maps its stages onto start..end percent."""
+    def report(description: str, fraction: float) -> None:
+        progress_store.update(server_id, action=action,
+                              percent=start + round((end - start) * fraction),
+                              step=f"Creating Playit tunnel: {description}")
+    return report
+
+
 def playit_configured() -> bool:
     return bool(os.getenv("PLAYIT_EMAIL", "").strip() and os.getenv("PLAYIT_PASSWORD", ""))
 
@@ -228,6 +237,7 @@ def _provision_resources(
         tunnel_name=subdomain, tunnel_port=server_port,
         subscription=subscription, agent=agent,
         protocol="bedrock" if is_bedrock else "java",
+        on_step=_tunnel_progress(db_server_id, "provision", 35, 60),
     ))
     if not tunnel_address:
         reason = last_error() or "PlayIT tunnel creation failed"
@@ -238,6 +248,8 @@ def _provision_resources(
                               message=reason)
         return {"success": False, "message": reason, "server_id": db_server_id}
     _set_connection_error(db_server_id, "tunnel_error", None)
+    progress_store.update(db_server_id, action="provision", percent=62,
+                          step="Looking up the tunnel port")
 
     if is_bedrock:
         # No SRV-based port discovery for Bedrock — playit.gg embeds the
@@ -489,15 +501,16 @@ def create_server_tunnel(db_server_id: int, region: str | None = None, subscript
     tunnel_address = asyncio.run(create_tunnel(
         tunnel_name=subdomain, tunnel_port=server_port, region=region, subscription=subscription, agent=agent,
         protocol="bedrock" if is_bedrock else "java",
+        on_step=_tunnel_progress(db_server_id, "tunnel", 5, 80),
     ))
     if not tunnel_address:
         reason = last_error() or "PlayIT tunnel creation failed"
         _set_connection_error(db_server_id, "tunnel_error", reason)
+        progress_store.update(db_server_id, action="tunnel", percent=100, step="Tunnel creation failed",
+                              status="failed", message=reason)
         return {"success": False, "message": reason}
     _set_connection_error(db_server_id, "tunnel_error", None)
-    # a retry that works replaces the "setup failed" notice from provisioning
-    if progress_store.get(db_server_id)["status"] == "failed":
-        progress_store.clear(db_server_id)
+    progress_store.update(db_server_id, action="tunnel", percent=82, step="Looking up the tunnel port")
 
     if is_bedrock:
         tunnel_address, external_port = _split_bedrock_address(tunnel_address)
@@ -526,6 +539,8 @@ def create_server_tunnel(db_server_id: int, region: str | None = None, subscript
     except sqlite3.Error as exc:
         log.warning("Failed to clear local_only flag for db_id=%d: %s", db_server_id, exc)
 
+    progress_store.update(db_server_id, action="tunnel", percent=90,
+                          step="Setting up optional Cloudflare DNS")
     connect_address, dns_warning = _create_optional_dns(
         db_server_id, subdomain, tunnel_address, external_port, is_bedrock,
     )
@@ -533,6 +548,9 @@ def create_server_tunnel(db_server_id: int, region: str | None = None, subscript
         "Tunnel created for server db_id=%d: connect_address=%s, external_port=%s",
         db_server_id, connect_address, external_port,
     )
+    progress_store.update(db_server_id, action="tunnel", percent=100,
+                          step=f"Public address ready: {connect_address}", status="completed",
+                          message=dns_warning)
     return {
         "success": True,
         "message": "PlayIT tunnel created successfully",

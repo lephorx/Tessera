@@ -33,6 +33,7 @@ from routes.properties import properties_bp
 from routes.servers import servers_bp
 from routes.settings import settings_bp
 from routes.system import system_bp
+from routes.users import users_bp
 
 load_dotenv()
 configure_log()
@@ -72,6 +73,7 @@ app.register_blueprint(players_bp)
 app.register_blueprint(backups_bp)
 app.register_blueprint(system_bp)
 app.register_blueprint(settings_bp)
+app.register_blueprint(users_bp)
 
 
 @app.before_request

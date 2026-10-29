@@ -408,18 +408,32 @@ def create_tunnel_endpoint(server_id: int):
     if subscription and subscription.lower() not in ("premium", "free"):
         return jsonify({"error": "'subscription' must be 'premium' or 'free'"}), 400
 
-    log.info("Tunnel creation requested: db_id=%d, region=%s, subscription=%s, agent=%s", server_id, region or "default", subscription or "default", agent or "default")
-    result = create_server_tunnel(server_id, region=region, subscription=subscription, agent=agent)
+    if not _server_exists(server_id):
+        return jsonify({"success": False, "message": "Server not found"}), 404
+    with get_db() as conn:
+        if conn.execute("SELECT 1 FROM playit_tunnels WHERE server_id = ?", (server_id,)).fetchone():
+            return jsonify({"success": False, "message": "This server already has a PlayIT tunnel"}), 409
+    prog = progress_store.get(server_id)
+    if prog["status"] == "in_progress":
+        return jsonify({"success": False, "message": "This server is already being set up"}), 409
 
-    if result["success"]:
-        log.info("Tunnel created: db_id=%d, address=%s", server_id, result.get("connect_address"))
-        return jsonify(result), 201
-    if "No server found" in result.get("message", ""):
-        return jsonify(result), 404
-    if result.get("conflict"):
-        return jsonify(result), 409
-    log.error("Tunnel creation failed: %s", result.get("message"))
-    return jsonify(result), 500
+    log.info("Tunnel creation requested: db_id=%d, region=%s, subscription=%s, agent=%s", server_id, region or "default", subscription or "default", agent or "default")
+    progress_store.update(server_id, action="tunnel", percent=2, step="Starting tunnel creation")
+
+    # The browser automation takes a minute or more; poll
+    # GET /api/servers/<id>/progress (action "tunnel") for the outcome.
+    def _bg_tunnel():
+        result = create_server_tunnel(server_id, region=region, subscription=subscription, agent=agent)
+        if result["success"]:
+            log.info("Tunnel created: db_id=%d, address=%s", server_id, result.get("connect_address"))
+        else:
+            log.error("Tunnel creation failed: %s", result.get("message"))
+            if progress_store.get(server_id)["status"] == "in_progress":
+                progress_store.update(server_id, action="tunnel", percent=100, step="Tunnel creation failed",
+                                      status="failed", message=result.get("message"))
+
+    threading.Thread(target=_bg_tunnel, daemon=True).start()
+    return jsonify({"success": True, "message": "Tunnel creation started", "server_id": server_id}), 202
 
 
 # ---------------------------------------------------------------------------

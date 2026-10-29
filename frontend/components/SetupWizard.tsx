@@ -55,16 +55,16 @@ interface SettingsResponse {
 }
 
 interface Props {
-  /** true right after account creation; false when reopened from the top bar */
+  /** true right after account creation (full page); false inside /settings */
   firstRun: boolean
   onDone: () => void
 }
 
 // Connection setup after account creation. Every step is saved to the
 // installation's .env as soon as the user continues, and the current step is
-// stored on the server, so the wizard resumes where it was left. Opened from
-// the top bar once something is configured, it shows all settings as one
-// form instead; "Run setup again" switches back to the wizard.
+// stored on the server, so the wizard resumes where it was left. On the
+// settings page it shows all settings as one form once something is
+// configured; "Run setup again" switches back to the wizard.
 export function SetupWizard({ firstRun, onDone }: Props) {
   const [loaded, setLoaded] = useState<SettingsResponse | null>(null)
   const [step, setStep] = useState<Step>("mode")
@@ -462,14 +462,8 @@ export function SetupWizard({ firstRun, onDone }: Props) {
       },
     ]
     return (
-      <div className="mx-auto w-full max-w-xl px-6 py-10">
-        <p className="text-xs tracking-widest text-muted-foreground uppercase">
-          Settings
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-          Connection settings
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+      <div>
+        <p className="text-sm text-muted-foreground">
           {loaded.setup.mode === "local"
             ? "CSCM is set to local network only. Saving a Playit account turns public addresses on."
             : "Each section is saved to your installation's .env on its own."}
@@ -509,16 +503,20 @@ export function SetupWizard({ firstRun, onDone }: Props) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-xl px-6 py-10">
-      <p className="text-xs tracking-widest text-muted-foreground uppercase">
-        {firstRun ? "Welcome to CSCM" : "Settings"}
-      </p>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-        {firstRun ? "Finish setting up" : "Connection settings"}
-      </h1>
-      <p className="mt-2 text-sm text-muted-foreground">
+    <div className={firstRun ? "mx-auto w-full max-w-xl px-6 py-10" : ""}>
+      {firstRun && (
+        <>
+          <p className="text-xs tracking-widest text-muted-foreground uppercase">
+            Welcome to CSCM
+          </p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+            Finish setting up
+          </h1>
+        </>
+      )}
+      <p className={cn("text-sm text-muted-foreground", firstRun && "mt-2")}>
         Settings are saved to your installation&apos;s <code>.env</code> as you
-        go. You can change them later in the top bar, or edit <code>.env</code>{" "}
+        go. You can change them later in Settings, or edit <code>.env</code>{" "}
         directly.
       </p>
 

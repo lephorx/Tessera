@@ -133,8 +133,10 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
                   title={progress.message ?? progress.step ?? ""}
                 >
                   {progress.status === "failed"
-                    ? `${progress.action === "delete" ? "Deletion" : "Setup"} failed: ${progress.message ?? progress.step}`
-                    : `${deleting ? "Deleting" : "Creating"}: ${progress.step ?? "working"}`}
+                    ? `${progress.action === "delete" ? "Deletion" : progress.action === "tunnel" ? "Tunnel" : "Setup"} failed: ${progress.message ?? progress.step}`
+                    : deleting
+                      ? `Deleting: ${progress.step ?? "working"}`
+                      : (progress.step ?? "Setting up…")}
                 </span>
               </span>
               {busy && (

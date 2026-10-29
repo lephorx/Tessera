@@ -41,12 +41,6 @@ export default function DashboardPage() {
     completed: boolean
     public_available: boolean
   } | null>(null)
-  // other pages link to /?settings=1 to open the connection settings
-  const [settingsOpen, setSettingsOpen] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).has("settings")
-  )
 
   const loadSetup = useCallback(async () => {
     try {
@@ -153,18 +147,12 @@ export default function DashboardPage() {
     )
   }
 
-  if (!setup.completed || settingsOpen) {
+  // first run: the setup wizard; later changes happen on /settings
+  if (!setup.completed) {
     return (
       <div className="min-h-screen bg-background">
         <TopNav user={user} onLogout={logout} />
-        <SetupWizard
-          firstRun={!setup.completed}
-          onDone={() => {
-            setSettingsOpen(false)
-            window.history.replaceState(null, "", "/")
-            loadSetup()
-          }}
-        />
+        <SetupWizard firstRun onDone={loadSetup} />
       </div>
     )
   }
@@ -181,11 +169,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <TopNav
-        user={user}
-        onLogout={logout}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
+      <TopNav user={user} onLogout={logout} />
 
       <main className="mx-auto max-w-screen-xl px-6 py-8">
         {/* Page header */}
