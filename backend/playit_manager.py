@@ -82,6 +82,29 @@ def _fail(reason: str) -> None:
     _last.error = reason
 
 
+# Finds the tunnel's public address on the page after creation (see create_tunnel)
+FIND_ADDRESS_JS = r"""
+() => {
+    const shape = /^[\w-]+(\.[\w-]+)+\.[a-z]{2,}(:\d+)?$/i;
+    const playit = /(ply\.gg|joinmc\.link|mcjoin\.link|playit\.plus|playit\.gg)(:\d+)?$/i;
+    const text = (el) => (el.textContent || "").trim();
+    for (const sel of ['.lm6flc4', '[class*="hmibjw4"]']) {
+        for (const el of document.querySelectorAll(sel)) {
+            const t = text(el);
+            if (shape.test(t)) return t;
+        }
+    }
+    for (const el of document.querySelectorAll('span, div')) {
+        if (el.childElementCount > 0) continue;
+        const t = text(el);
+        // at least three labels so the bare "playit.gg" brand never matches
+        if (shape.test(t) && playit.test(t) && t.split(':')[0].split('.').length >= 3) return t;
+    }
+    return null;
+}
+"""
+
+
 async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | None = None, subscription: str | None = None, agent: str | None = None, protocol: str = "java", on_step: Callable[[str, float], None] | None = None) -> str | None:
     """Create a PlayIT tunnel with the given name and local port.
 
@@ -249,23 +272,14 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
 
             step = at("waiting for playit.gg to assign an address", 0.8)
             log.info("Waiting for tunnel address allocation")
-            # Java addresses look like "abc123.joinmc.link" (no port — SRV
-            # discovery handles that); Bedrock addresses embed the port
-            # directly, e.g. "cheap-throughout.deu.at.playit.plus:1037".
-            # Match on the general host[:port] shape instead of hardcoding
-            # domain suffixes, since the two protocols use different domains.
-            await page.wait_for_function("""
-                () => {
-                    const el = document.querySelector('span.lm6flc4');
-                    if (!el) return null;
-                    const text = el.textContent.trim();
-                    return /^[\\w.-]+\\.[a-z]{2,}(?::\\d+)?$/i.test(text) ? text : null;
-                }
-            """, timeout=TIMEOUT * 2)
-
-            address = await page.evaluate(
-                "() => document.querySelector('span.lm6flc4').textContent.trim()"
-            )
+            # Addresses look like "abc123.joinmc.link" or, since the rework,
+            # "domination-boston.tun.ply.gg"; Bedrock ones may embed the port,
+            # e.g. "cheap-throughout.deu.at.playit.plus:1037". The class names
+            # are generated and change between playit.gg releases, so try the
+            # known ones first and then any element whose whole text is a
+            # playit hostname.
+            handle = await page.wait_for_function(FIND_ADDRESS_JS, timeout=TIMEOUT * 2)
+            address = await handle.json_value()
 
             log.info("Tunnel created successfully: address=%s, port=%s", address, tunnel_port)
             await context.close()
