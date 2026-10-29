@@ -86,6 +86,17 @@ function useTabsIndicator(
     if (!list || !indicator) return
     let first = true
     let current: HTMLElement | null = null
+    let running: Animation | null = null
+
+    /** where the pill is on screen right now, mid-animation included */
+    const presented = () => {
+      const listBox = list.getBoundingClientRect()
+      const box = indicator.getBoundingClientRect()
+      return {
+        x: box.left - listBox.left - list.clientLeft + list.scrollLeft,
+        width: box.width,
+      }
+    }
 
     const place = () => {
       const active = list.querySelector<HTMLElement>(
@@ -95,14 +106,51 @@ function useTabsIndicator(
         indicator.style.opacity = "0"
         return
       }
-      // the first placement jumps there; later ones slide
-      indicator.dataset.ready = first ? "false" : "true"
+      const x = active.offsetLeft
+      const y = active.offsetTop
+      const width = active.offsetWidth
+      const moved = !first && current !== null && active !== current
+      const calm = matchMedia("(prefers-reduced-motion: reduce)").matches
+      // read the starting point before anything changes
+      const from = moved && !calm ? presented() : null
+
+      if (moved || first) {
+        running?.cancel()
+        running = null
+      }
       indicator.style.opacity = "1"
-      indicator.style.width = `${active.offsetWidth}px`
+      indicator.style.width = `${width}px`
       indicator.style.height = `${active.offsetHeight}px`
-      indicator.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`
-      if (!first && active !== current)
-        active.scrollIntoView({ block: "nearest", inline: "nearest" })
+      indicator.style.transform = `translate(${x}px, ${y}px)`
+
+      if (from) {
+        // stretch: the leading edge reaches the new tab first, so the pill
+        // briefly spans both; then the trailing edge catches up
+        const forward = x + width / 2 > from.x + from.width / 2
+        const stretched = forward
+          ? { x: from.x, width: x + width - from.x }
+          : { x, width: from.x + from.width - x }
+        running = indicator.animate(
+          [
+            {
+              transform: `translate(${from.x}px, ${y}px)`,
+              width: `${from.width}px`,
+              easing: "cubic-bezier(0.45, 0, 0.55, 1)",
+            },
+            {
+              transform: `translate(${stretched.x}px, ${y}px)`,
+              width: `${stretched.width}px`,
+              offset: 0.42,
+              easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            },
+            { transform: `translate(${x}px, ${y}px)`, width: `${width}px` },
+          ],
+          { duration: 520 }
+        )
+        running.onfinish = () => (running = null)
+      }
+
+      if (moved) active.scrollIntoView({ block: "nearest", inline: "nearest" })
       current = active
       first = false
     }
@@ -121,6 +169,7 @@ function useTabsIndicator(
       .querySelectorAll('[data-slot="tabs-trigger"]')
       .forEach((trigger) => sizes.observe(trigger))
     return () => {
+      running?.cancel()
       mutations.disconnect()
       sizes.disconnect()
     }
@@ -150,7 +199,7 @@ function TabsList({
         ref={indicatorRef}
         aria-hidden
         data-slot="tabs-indicator"
-        className="pointer-events-none absolute top-0 left-0 hidden rounded-[12px] bg-tint-bg opacity-0 data-[ready=true]:transition-[transform,width,height,opacity] data-[ready=true]:duration-[420ms] data-[ready=true]:ease-[cubic-bezier(0.32,0.72,0,1)] modern:block"
+        className="pointer-events-none absolute top-0 left-0 hidden rounded-[12px] bg-tint-bg opacity-0 modern:block"
       />
       {children}
     </TabsPrimitive.List>
