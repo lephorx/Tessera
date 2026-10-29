@@ -68,7 +68,7 @@ export default function SettingsPage() {
       <TopNav user={user} onLogout={logout} />
       <main className="enter mx-auto w-full max-w-xl px-6 py-8">
         <Link
-          href="/"
+          href="/servers"
           className="mb-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground modern:mb-3 modern:text-[13px] modern:font-medium modern:text-tint modern:hover:text-tint/80"
         >
           <ArrowLeft className="size-3.5" />
@@ -107,7 +107,10 @@ export default function SettingsPage() {
           {isAdmin && (
             <>
               <TabsContent value="connection">
-                <SetupWizard firstRun={false} onDone={() => router.push("/")} />
+                <SetupWizard
+                  firstRun={false}
+                  onDone={() => router.push("/servers")}
+                />
               </TabsContent>
               <TabsContent value="users">
                 <UsersPanel />

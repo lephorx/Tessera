@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils"
 
 // modern: the main places, as pills in the middle of the bar
 const NAV = [
-  { href: "/", label: "Servers", icon: LayoutGrid },
+  { href: "/servers", label: "Servers", icon: LayoutGrid },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
@@ -23,7 +23,7 @@ interface Props {
 export function TopNav({ user, onLogout }: Props) {
   const [updateCheck, setUpdateCheck] = useState(0)
   const pathname = usePathname()
-  const section = pathname.startsWith("/settings") ? "/settings" : "/"
+  const section = pathname.startsWith("/settings") ? "/settings" : "/servers"
   // modern: the bar's edge only shows once content scrolls under it
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
@@ -41,7 +41,7 @@ export function TopNav({ user, onLogout }: Props) {
       >
         <div className="mx-auto flex h-14 max-w-screen-xl items-center justify-between px-6 modern:h-16 modern:gap-4">
           <Link
-            href="/"
+            href="/servers"
             className="flex items-center gap-2.5 text-sm font-semibold tracking-tight transition-opacity hover:opacity-80 modern:text-[17px] modern:font-extrabold"
           >
             <span className="modern:flex modern:size-8 modern:items-center modern:justify-center modern:rounded-[10px] modern:bg-linear-to-br modern:from-[#4f8dff] modern:to-[#1d4ed8] modern:shadow-[0_4px_14px_rgb(37_99_235/0.35),inset_0_0_0_1px_rgb(255_255_255/0.18)]">

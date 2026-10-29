@@ -235,7 +235,7 @@ export default function ServerDetailPage() {
             DELETING_KEY,
             JSON.stringify({ id: serverId, name: serverName.current })
           )
-          window.location.href = "/"
+          window.location.href = "/servers"
           return
         }
         if (p?.action === "delete" && p.status === "failed")
@@ -650,7 +650,7 @@ export default function ServerDetailPage() {
             </p>
             {/* the dashboard keeps showing the progress on the server's card */}
             <Button asChild variant="outline" size="sm" className="mt-4">
-              <Link href="/">
+              <Link href="/servers">
                 <ArrowLeft className="size-3.5" />
                 Back to dashboard
               </Link>
@@ -667,7 +667,7 @@ export default function ServerDetailPage() {
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <Link
-              href="/"
+              href="/servers"
               className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground modern:mb-3 modern:w-fit modern:text-[13px] modern:font-medium modern:text-tint modern:hover:text-tint/80"
             >
               <ArrowLeft className="size-3 modern:size-3.5" />

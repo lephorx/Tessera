@@ -206,20 +206,29 @@ export function DefaultsEditor({ user, onLogout, onClose }: Props) {
       <TopNav user={user} onLogout={onLogout} />
 
       <main className="enter mx-auto max-w-screen-xl px-6 py-8">
+        {/* modern: a back link above the title, like every other page */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="mb-3 hidden w-fit items-center gap-1.5 text-[13px] font-medium text-tint hover:text-tint/80 modern:flex"
+        >
+          <ArrowLeft className="size-3.5" />
+          Servers
+        </button>
         {/* Header */}
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4 modern:items-end">
           <div className="flex items-center gap-3">
             <Button
               size="sm"
               variant="ghost"
-              className="gap-1.5"
+              className="gap-1.5 modern:hidden"
               onClick={onClose}
             >
               <ArrowLeft className="size-4" />
               Back
             </Button>
             <div>
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-lg font-semibold modern:text-[32px] modern:leading-tight modern:font-extrabold">
                 Default Server Properties
               </h2>
               <p className="text-sm text-muted-foreground">
