@@ -25,6 +25,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import threading
 
 from dotenv import load_dotenv
 
@@ -638,3 +639,98 @@ def rename_server_subdomain(db_server_id: int, new_subdomain: str) -> dict:
         "message": "Cloudflare subdomain updated",
         **({"warning": "Some old DNS records need manual removal"} if cleanup_failed else {}),
     }
+
+
+# ---------------------------------------------------------------------------
+# Moving DNS records after the Cloudflare settings change
+# ---------------------------------------------------------------------------
+_dns_sync_lock = threading.Lock()
+_dns_sync: dict = {"running": False, "total": 0, "done": 0, "failed": [], "domain": None}
+
+
+def dns_sync_status() -> dict:
+    with _dns_sync_lock:
+        return {**_dns_sync, "failed": list(_dns_sync["failed"])}
+
+
+def start_dns_resync(old: dict) -> None:
+    with _dns_sync_lock:
+        _dns_sync.update(running=True, total=0, done=0, failed=[])
+    threading.Thread(target=resync_dns, args=(old,), daemon=True).start()
+
+
+def resync_dns(old: dict) -> None:
+    """Create every server's records for the current Cloudflare settings and
+    delete the ones made with the previous settings (``old`` holds their
+    CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID). With Cloudflare turned off
+    the old records are only deleted. Runs in the background; see
+    dns_sync_status()."""
+    with get_db() as conn:
+        servers = conn.execute(
+            "SELECT s.id, s.name, s.slug, s.type, t.tunnel_address, t.external_port"
+            " FROM servers s JOIN playit_tunnels t ON t.server_id = s.id"
+            " WHERE COALESCE(s.local_only, 0) = 0 ORDER BY s.id"
+        ).fetchall()
+    enabled = cloudflare_enabled()
+    with _dns_sync_lock:
+        _dns_sync.update(running=True, total=len(servers), done=0, failed=[],
+                         domain=os.getenv("CLOUDFLARE_BASE_DOMAIN") if enabled else None)
+    log.info("Moving DNS records for %d server(s) (Cloudflare %s)", len(servers), "on" if enabled else "off")
+
+    for server in servers:
+        ok = True
+        try:
+            ok = _resync_server_dns(server, old, enabled)
+        except Exception:
+            log.exception("Could not move the DNS records of server %d", server["id"])
+            ok = False
+        with _dns_sync_lock:
+            _dns_sync["done"] += 1
+            if not ok:
+                _dns_sync["failed"].append(server["name"])
+
+    with _dns_sync_lock:
+        _dns_sync["running"] = False
+    log.info("DNS records moved; %d failed", len(_dns_sync["failed"]))
+
+
+def _resync_server_dns(server, old: dict, enabled: bool) -> bool:
+    server_id = server["id"]
+    with get_db() as conn:
+        old_rows = conn.execute(
+            "SELECT id, record_type, name, cloudflare_record_id FROM dns_records WHERE server_id = ?",
+            (server_id,),
+        ).fetchall()
+    # keep a name the user picked with rename_server_subdomain
+    cname = next((r for r in old_rows if r["record_type"] == "CNAME"), None)
+    subdomain = cname["name"].split(".")[0] if cname else server["slug"] or _slugify(server["name"])
+
+    is_bedrock = server["type"] in BEDROCK_TYPES
+    external_port = server["external_port"]
+    if enabled and not is_bedrock and not external_port:
+        external_port = lookup_minecraft_srv_port(server["tunnel_address"])
+        if external_port:
+            with get_db() as conn:
+                conn.execute("UPDATE playit_tunnels SET external_port = ? WHERE server_id = ?",
+                             (external_port, server_id))
+
+    if enabled:
+        unchanged = (old.get("CLOUDFLARE_ZONE_ID") == os.getenv("CLOUDFLARE_ZONE_ID")
+                     and old.get("CLOUDFLARE_BASE_DOMAIN") == os.getenv("CLOUDFLARE_BASE_DOMAIN"))
+        if unchanged and old_rows:
+            return True  # the records are already where they belong
+        _, warning = _create_dns_records(server_id, subdomain, server["tunnel_address"], external_port, is_bedrock)
+        if warning:
+            # the old records stay, so the old address goes on working
+            _set_connection_error(server_id, "dns_error", warning)
+            return False
+    with get_db() as conn:
+        conn.executemany("DELETE FROM dns_records WHERE id = ?", [(r["id"],) for r in old_rows])
+    _set_connection_error(server_id, "dns_error", None)
+
+    for row in old_rows:
+        if row["cloudflare_record_id"] and not delete_dns_record_by_id(
+            row["cloudflare_record_id"], old.get("CLOUDFLARE_API_TOKEN"), old.get("CLOUDFLARE_ZONE_ID"),
+        ):
+            log.warning("Old DNS record %s needs manual removal", row["name"])
+    return True

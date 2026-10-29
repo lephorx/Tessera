@@ -154,17 +154,20 @@ def create_srv_record(subdomain: str, target: str, port: int) -> str | None:
         return None
 
 
-def delete_dns_record_by_id(cf_record_id: str) -> bool:
+def delete_dns_record_by_id(cf_record_id: str, api_token: str | None = None,
+                            zone_id: str | None = None) -> bool:
     """Delete a single DNS record by its Cloudflare record ID.
 
     Args:
         cf_record_id: The opaque record identifier returned by the Cloudflare API.
+        api_token, zone_id: Credentials to use instead of the current ones,
+            e.g. the old zone's after the settings changed.
 
     Returns:
         ``True`` on success, ``False`` on failure.
     """
-    api_token = os.getenv("CLOUDFLARE_API_TOKEN")
-    zone_id   = os.getenv("CLOUDFLARE_ZONE_ID")
+    api_token = api_token or os.getenv("CLOUDFLARE_API_TOKEN")
+    zone_id   = zone_id or os.getenv("CLOUDFLARE_ZONE_ID")
     if not api_token or not zone_id:
         log.error("Missing CLOUDFLARE_API_TOKEN or CLOUDFLARE_ZONE_ID for record deletion")
         return False
@@ -184,3 +187,32 @@ def delete_dns_record_by_id(cf_record_id: str) -> bool:
     except (requests.exceptions.RequestException, ValueError, KeyError) as exc:
         log.error("Cloudflare API request failed (DELETE): %s", exc)
         return False
+
+
+def verify_zone(api_token: str, zone_id: str, base_domain: str) -> str | None:
+    """Check that the token can edit DNS in the zone and that the domain is in it.
+
+    Returns:
+        ``None`` when everything fits, otherwise the reason to show the user.
+    """
+    try:
+        response = requests.get(f"{_CF_BASE}/zones/{zone_id}", headers=_headers(api_token), timeout=15)
+        data = response.json()
+    except (requests.exceptions.RequestException, ValueError) as exc:
+        return f"Could not reach Cloudflare: {exc}"
+    if response.status_code in (401, 403):
+        return "Cloudflare rejected the API token for this zone. Check the token and its permissions."
+    if not response.ok or not data.get("success"):
+        return "Cloudflare doesn't know this zone ID, or the token can't access it."
+    zone_name = (data.get("result") or {}).get("name", "").lower()
+    domain = base_domain.lower().rstrip(".")
+    if zone_name and domain != zone_name and not domain.endswith("." + zone_name):
+        return f"{base_domain} is not part of this zone ({zone_name}). Enter the zone ID of {base_domain}."
+    try:
+        records = requests.get(f"{_CF_BASE}/zones/{zone_id}/dns_records", headers=_headers(api_token),
+                               params={"per_page": 1}, timeout=15)
+    except requests.exceptions.RequestException as exc:
+        return f"Could not reach Cloudflare: {exc}"
+    if not records.ok:
+        return "The API token can't read DNS records in this zone. It needs Zone → DNS → Edit."
+    return None

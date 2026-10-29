@@ -1,7 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Check, Globe, Loader2, Lock, ExternalLink } from "lucide-react"
+import {
+  AlertTriangle,
+  Check,
+  Globe,
+  Loader2,
+  Lock,
+  ExternalLink,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -9,6 +16,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import type { Server } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const PLAYIT_AGENT_WIZARD =
@@ -54,6 +70,52 @@ interface SettingsResponse {
   setup: { completed: boolean; step: Step; mode: "public" | "local" | null }
 }
 
+interface Confirmation {
+  title: string
+  warnings: string[]
+  destructive: boolean
+  save: () => void
+}
+
+const isOff = (v: string | undefined) =>
+  ["false", "0", "no", "off"].includes((v || "").toLowerCase())
+
+// Follow the background move of DNS records after the domain changed
+async function followDnsSync() {
+  const id = toast.loading("Moving DNS records…")
+  for (let i = 0; i < 600; i++) {
+    await new Promise((r) => setTimeout(r, 1500))
+    let status
+    try {
+      status = await api.settings.dnsSync()
+    } catch {
+      continue
+    }
+    if (status.running) {
+      if (status.total)
+        toast.loading(
+          `Moving DNS records… ${status.done} of ${status.total} servers`,
+          { id }
+        )
+      continue
+    }
+    if (status.failed.length)
+      toast.error(
+        `DNS records of ${status.failed.join(", ")} could not be moved. Retry DNS on those servers.`,
+        { id, duration: 15000 }
+      )
+    else
+      toast.success(
+        status.total
+          ? `DNS records of ${status.total} server${status.total === 1 ? "" : "s"} are up to date`
+          : "DNS settings applied",
+        { id }
+      )
+    return
+  }
+  toast.dismiss(id)
+}
+
 interface Props {
   /** true right after account creation (full page); false inside /settings */
   firstRun: boolean
@@ -83,8 +145,14 @@ export function SetupWizard({ firstRun, onDone }: Props) {
   const [cfToken, setCfToken] = useState("")
   const [cfZone, setCfZone] = useState("")
   const [cfDomain, setCfDomain] = useState("")
+  const [servers, setServers] = useState<Server[]>([])
+  const [confirm, setConfirm] = useState<Confirmation | null>(null)
 
   useEffect(() => {
+    api.servers
+      .list()
+      .then((res) => setServers(res?.servers ?? res ?? []))
+      .catch(() => {})
     api.settings
       .get()
       .then((res: SettingsResponse) => {
@@ -202,7 +270,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         if (!cfToken && !loaded?.secrets_set.CLOUDFLARE_API_TOKEN)
           throw new Error("Enter a Cloudflare API token.")
       }
-      await api.settings.save({
+      const res = await api.settings.save({
         CLOUDFLARE_ENABLED: cfEnabled ? "auto" : "false",
         CLOUDFLARE_API_TOKEN: cfEnabled ? cfToken || null : null,
         CLOUDFLARE_ZONE_ID: cfEnabled ? cfZone.trim() : null,
@@ -210,6 +278,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
       })
       setCfToken("")
       await after()
+      if (res?.dns_sync) followDnsSync()
     })
 
   if (!loaded) {
@@ -218,6 +287,147 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     )
+  }
+
+  const savedValues = loaded.values
+  const savedDomain = savedValues.CLOUDFLARE_BASE_DOMAIN ?? ""
+  const domainChanged = !!savedDomain && cfDomain.trim() !== savedDomain
+  // what is still missing before the custom domain can be saved
+  const cfMissing = cfEnabled
+    ? [
+        !cfToken &&
+          !loaded.secrets_set.CLOUDFLARE_API_TOKEN &&
+          "Cloudflare API token",
+        !cfZone.trim() && "zone ID",
+        !cfDomain.trim() && "base domain",
+      ].filter((m): m is string => !!m)
+    : []
+
+  // the domain belongs to its own zone: changing it asks for the zone ID again
+  const changeDomain = (value: string) => {
+    setCfDomain(value)
+    if (!savedDomain) return
+    if (value.trim() === savedDomain)
+      setCfZone(savedValues.CLOUDFLARE_ZONE_ID ?? "")
+    else if (cfDomain.trim() === savedDomain) setCfZone("")
+  }
+
+  const publicServers = servers.filter(
+    (s) => !s.local_only && (s.tunnels?.length ?? 0) > 0
+  ).length
+  const serverCount = `${publicServers} server${publicServers === 1 ? "" : "s"}`
+
+  // what saving a section will do, shown before it is saved
+  function playitWarnings(): string[] {
+    const w: string[] = []
+    const oldEmail = savedValues.PLAYIT_EMAIL ?? ""
+    if (oldEmail && email.trim() !== oldEmail)
+      w.push(
+        `New tunnels are created in the Playit account ${email.trim()}. Existing tunnels stay in ${oldEmail} and keep working.`
+      )
+    else if (!oldEmail && email.trim())
+      w.push(`CSCM creates tunnels with the Playit account ${email.trim()}.`)
+    if (password)
+      w.push("CSCM signs in to Playit with the new password from now on.")
+    if ((savedValues.PLAYIT_SUBSCRIPTION || "free") !== subscription)
+      w.push(
+        `Tunnels created from now on use the ${subscription === "free" ? "free" : "premium"} plan. Existing tunnels don't change.`
+      )
+    if (
+      subscription === "premium" &&
+      (savedValues.PLAYIT_REGION || "Germany") !== region
+    )
+      w.push(
+        `New tunnels are created in ${region}. Existing tunnels keep their region.`
+      )
+    if (w.length && loaded?.setup.mode === "local")
+      w.push("Public addresses are turned on for new servers.")
+    return w
+  }
+
+  function agentWarnings(): string[] {
+    const w: string[] = []
+    const agent = loaded!.agent
+    if (agentMode === "managed") {
+      if (secretKey)
+        w.push(
+          "CSCM restarts its Playit agent with the new SECRET_KEY. Your servers can't be reached from outside for a few seconds. If the key belongs to a different agent, existing tunnels only work again once they're assigned to it on playit.gg."
+        )
+      else if (agent.running && agent.source === "cscm")
+        w.push(
+          "CSCM restarts its Playit agent. Your servers can't be reached from outside for a few seconds."
+        )
+      else w.push("CSCM starts its own Playit agent on this device.")
+    } else if (agent.source === "cscm") {
+      w.push(
+        "CSCM stops its own Playit agent. Keep your own agent running on this device, or nobody can reach your servers from outside."
+      )
+    }
+    if ((savedValues.PLAYIT_AGENT ?? "") !== agentName.trim())
+      w.push(
+        agentName.trim()
+          ? `New tunnels are assigned to the agent "${agentName.trim()}".`
+          : "New tunnels are assigned to the first available agent."
+      )
+    return w
+  }
+
+  function cloudflareWarnings(): { warnings: string[]; destructive: boolean } {
+    const wasOn =
+      !isOff(savedValues.CLOUDFLARE_ENABLED || "false") &&
+      !!savedValues.CLOUDFLARE_ZONE_ID
+    const newDomain = cfDomain.trim()
+    const none =
+      publicServers === 0
+        ? " No server has a public address yet, so no records change."
+        : ""
+    if (!wasOn && cfEnabled)
+      return {
+        destructive: false,
+        warnings: [
+          `CSCM creates DNS records on ${newDomain} for ${serverCount} with a public address. Players can then join with addresses like survival.${newDomain}; the Playit addresses keep working.${none}`,
+        ],
+      }
+    if (wasOn && !cfEnabled)
+      return {
+        destructive: true,
+        warnings: [
+          `CSCM deletes the DNS records of ${serverCount} from ${savedDomain}. Those addresses stop working; players have to use the Playit addresses.${none}`,
+        ],
+      }
+    if (!cfEnabled) return { destructive: false, warnings: [] }
+    const w: string[] = []
+    let destructive = false
+    if (domainChanged) {
+      destructive = true
+      w.push(
+        `Server addresses move from *.${savedDomain} to *.${newDomain}. CSCM creates the new records for ${serverCount} and deletes the old ones, so the old addresses stop working. Tell your players.${none}`
+      )
+    } else if (cfZone.trim() !== (savedValues.CLOUDFLARE_ZONE_ID ?? "")) {
+      w.push(
+        `CSCM creates the records of ${serverCount} in the new zone and deletes them from the old one.${none}`
+      )
+    }
+    if (cfToken)
+      w.push(
+        domainChanged
+          ? "The new API token must be allowed to edit DNS in the new zone; CSCM checks this before saving."
+          : "Only the API token changes. Existing records stay as they are."
+      )
+    return { destructive, warnings: w }
+  }
+
+  // check, then ask before saving a section of the settings form
+  function askToSave(
+    title: string,
+    { warnings, destructive }: { warnings: string[]; destructive: boolean },
+    save: () => void
+  ) {
+    if (!warnings.length) {
+      toast.info("Nothing changed")
+      return
+    }
+    setConfirm({ title, warnings, destructive, save })
   }
 
   const stepIndex = STEPS.indexOf(step)
@@ -417,6 +627,9 @@ export function SetupWizard({ firstRun, onDone }: Props) {
             <Label htmlFor="cf-zone">Zone ID</Label>
             <Input
               id="cf-zone"
+              placeholder={
+                domainChanged ? `Zone ID of ${cfDomain.trim()}` : undefined
+              }
               value={cfZone}
               onChange={(e) => setCfZone(e.target.value)}
             />
@@ -427,9 +640,17 @@ export function SetupWizard({ firstRun, onDone }: Props) {
               id="cf-domain"
               placeholder="example.com"
               value={cfDomain}
-              onChange={(e) => setCfDomain(e.target.value)}
+              onChange={(e) => changeDomain(e.target.value)}
             />
           </div>
+          {cfMissing.length > 0 && (
+            <p className="flex items-start gap-1.5 text-xs text-destructive">
+              <AlertTriangle className="mt-px size-3.5 shrink-0" />
+              {domainChanged && !cfZone.trim()
+                ? `Enter the zone ID of ${cfDomain.trim() || "the new domain"}${cfMissing.length > 1 ? ` and the ${cfMissing.filter((m) => m !== "zone ID").join(" and ")}` : ""} to save.`
+                : `Enter the ${cfMissing.join(", ")} to save.`}
+            </p>
+          )}
         </>
       )}
     </div>
@@ -448,17 +669,42 @@ export function SetupWizard({ firstRun, onDone }: Props) {
       {
         title: "Playit account",
         fields: playitFields,
-        save: () => saveAccount(saved("Playit account")),
+        blocked: false,
+        save: () =>
+          askToSave(
+            "Save Playit account?",
+            {
+              warnings: playitWarnings(),
+              destructive:
+                !!savedValues.PLAYIT_EMAIL &&
+                email.trim() !== savedValues.PLAYIT_EMAIL,
+            },
+            () => saveAccount(saved("Playit account"))
+          ),
       },
       {
         title: "Playit agent",
         fields: agentFields,
-        save: () => saveAgent(saved("Agent settings")),
+        blocked: false,
+        save: () =>
+          askToSave(
+            "Save agent settings?",
+            {
+              warnings: agentWarnings(),
+              destructive:
+                agentMode === "existing" && loaded.agent.source === "cscm",
+            },
+            () => saveAgent(saved("Agent settings"))
+          ),
       },
       {
         title: "Custom domain",
         fields: cloudflareFields,
-        save: () => saveCloudflare(saved("Custom domain")),
+        blocked: cfMissing.length > 0,
+        save: () =>
+          askToSave("Save custom domain?", cloudflareWarnings(), () =>
+            saveCloudflare(saved("Custom domain"))
+          ),
       },
     ]
     return (
@@ -478,7 +724,11 @@ export function SetupWizard({ firstRun, onDone }: Props) {
               <h2 className="mb-4 text-sm font-semibold">{section.title}</h2>
               {section.fields}
               <div className="mt-5 flex justify-end">
-                <Button size="sm" disabled={saving} onClick={section.save}>
+                <Button
+                  size="sm"
+                  disabled={saving || section.blocked}
+                  onClick={section.save}
+                >
                   {saving && <Loader2 className="size-3.5 animate-spin" />}
                   Save
                 </Button>
@@ -498,6 +748,45 @@ export function SetupWizard({ firstRun, onDone }: Props) {
           </Button>
           <Button onClick={onDone}>Done</Button>
         </div>
+
+        <Dialog
+          open={confirm !== null}
+          onOpenChange={(open) => !open && setConfirm(null)}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle
+                  className={cn(
+                    "size-4",
+                    confirm?.destructive ? "text-destructive" : "text-amber-500"
+                  )}
+                />
+                {confirm?.title}
+              </DialogTitle>
+              <DialogDescription>This is what happens next:</DialogDescription>
+            </DialogHeader>
+            <ul className="list-disc space-y-2 pl-5 text-sm">
+              {confirm?.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setConfirm(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant={confirm?.destructive ? "destructive" : "default"}
+                onClick={() => {
+                  confirm?.save()
+                  setConfirm(null)
+                }}
+              >
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     )
   }
@@ -605,7 +894,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         </div>
         {step !== "mode" && (
           <Button
-            disabled={saving}
+            disabled={saving || (step === "cloudflare" && cfMissing.length > 0)}
             onClick={() =>
               step === "playit"
                 ? saveAccount()

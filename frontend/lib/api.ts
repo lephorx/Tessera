@@ -68,6 +68,15 @@ export const api = {
       apiCall("/settings", { method: "PUT", body: JSON.stringify({ values }) }),
     startAgent: () => apiCall("/settings/agent", { method: "POST" }),
     stopAgent: () => apiCall("/settings/agent", { method: "DELETE" }),
+    /** progress of moving DNS records after the domain changed */
+    dnsSync: () =>
+      apiCall("/settings/dns-sync") as Promise<{
+        running: boolean
+        total: number
+        done: number
+        failed: string[]
+        domain: string | null
+      }>,
   },
   users: {
     list: () => apiCall("/users"),
@@ -553,7 +562,8 @@ export const api = {
 
       if (failed.length === files.length) {
         const reason = results.find((r) => r.status === "rejected") as
-          PromiseRejectedResult | undefined
+          | PromiseRejectedResult
+          | undefined
         throw new Error(
           reason?.reason instanceof Error
             ? reason.reason.message
