@@ -205,7 +205,7 @@ export function DefaultsEditor({ user, onLogout, onClose }: Props) {
     <div className="min-h-screen bg-background">
       <TopNav user={user} onLogout={onLogout} />
 
-      <main className="mx-auto max-w-screen-xl px-6 py-8">
+      <main className="enter mx-auto max-w-screen-xl px-6 py-8">
         {/* Header */}
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">

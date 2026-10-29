@@ -39,7 +39,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 modern:bg-black/35 modern:duration-200 modern:supports-backdrop-filter:backdrop-blur-[2px]",
+        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 modern:bg-black/35 modern:duration-300 modern:supports-backdrop-filter:backdrop-blur-[2px] modern:data-closed:duration-200",
         className
       )}
       {...props}
@@ -61,7 +61,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 modern:gap-5 modern:rounded-[20px] modern:p-6 modern:shadow-raised modern:ring-0 modern:duration-200 modern:ease-[cubic-bezier(0.32,0.72,0,1)] modern:dark:ring-1 modern:dark:ring-white/10 motion-reduce:modern:data-open:zoom-in-100 motion-reduce:modern:data-closed:zoom-out-100",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 modern:gap-5 modern:rounded-[20px] modern:p-6 modern:shadow-raised modern:ring-0 modern:duration-[380ms] modern:ease-[cubic-bezier(0.22,1,0.36,1)] modern:dark:ring-1 modern:dark:ring-white/10 motion-reduce:modern:data-open:zoom-in-100 modern:data-closed:duration-150 modern:data-closed:ease-[cubic-bezier(0.4,0,1,1)] motion-reduce:modern:data-closed:zoom-out-100",
           className
         )}
         {...props}

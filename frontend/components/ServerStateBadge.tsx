@@ -94,20 +94,32 @@ export function ServerStateBadge({
       role="status"
       className={cn(
         "inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground",
-        "modern:h-6 modern:rounded-full modern:px-2.5 modern:font-semibold",
+        "modern:h-6 modern:rounded-full modern:px-2.5 modern:font-semibold modern:transition-[background-color,color] modern:duration-500",
         capsule,
         className
       )}
     >
-      <span
-        className={cn(
-          "size-2 shrink-0 rounded-full",
-          dot,
-          "modern:size-1.5",
-          MODERN_DOT[state],
-          busy && "motion-reduce:animate-none"
+      <span className="relative flex shrink-0">
+        {/* modern: a soft ring keeps radiating while the state is changing */}
+        {busy && (
+          <span
+            aria-hidden
+            className={cn(
+              "ping absolute inset-0 hidden rounded-full modern:block",
+              MODERN_DOT[state]
+            )}
+          />
         )}
-      />
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            dot,
+            "modern:size-1.5 modern:animate-none modern:transition-colors modern:duration-500",
+            MODERN_DOT[state],
+            busy && "motion-reduce:animate-none"
+          )}
+        />
+      </span>
       {label}
     </span>
   )

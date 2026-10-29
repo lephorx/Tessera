@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Server, LogOut, Settings, RefreshCw } from "lucide-react"
 
@@ -14,11 +14,21 @@ interface Props {
 
 export function TopNav({ user, onLogout }: Props) {
   const [updateCheck, setUpdateCheck] = useState(0)
+  // modern: the bar's edge only shows once content scrolls under it
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 4)
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
 
   return (
     <>
       {/* modern: a translucent bar that content scrolls under */}
-      <header className="border-b border-border bg-background modern:sticky modern:top-0 modern:z-40 modern:border-separator modern:material">
+      <header
+        data-scrolled={scrolled}
+        className="border-b border-border bg-background modern:sticky modern:top-0 modern:z-40 modern:border-transparent modern:material modern:transition-[border-color,background-color] modern:duration-300 modern:data-[scrolled=false]:bg-background modern:data-[scrolled=true]:border-separator"
+      >
         <div className="mx-auto flex h-14 max-w-screen-xl items-center justify-between px-6 modern:h-13">
           <Link
             href="/"

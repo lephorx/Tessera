@@ -96,7 +96,8 @@ export function DesignPanel() {
             <label
               key={option.value}
               className={cn(
-                "group relative flex cursor-pointer flex-col overflow-hidden border border-border bg-card transition-[border-color,box-shadow]",
+                "lift group relative flex cursor-pointer flex-col overflow-hidden border border-border bg-card transition-[border-color,box-shadow]",
+                "modern:active:scale-[0.98]",
                 "modern:rounded-2xl modern:shadow-surface",
                 "has-focus-visible:ring-3 has-focus-visible:ring-ring/50",
                 selected

@@ -623,7 +623,7 @@ export default function ServerDetailPage() {
       )}
 
       <main
-        className="mx-auto w-full max-w-screen-xl flex-1 px-6 py-8"
+        className="enter mx-auto w-full max-w-screen-xl flex-1 px-6 py-8"
         inert={pageBusy || undefined}
       >
         {/* Breadcrumb + header */}

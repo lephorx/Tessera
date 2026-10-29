@@ -17,8 +17,14 @@ declare global {
 }
 
 export function setDesign(design: Design) {
-  localStorage.setItem(DESIGN_KEY, design)
-  window.__cscmApplyDesign?.()
+  const apply = () => {
+    localStorage.setItem(DESIGN_KEY, design)
+    window.__cscmApplyDesign?.()
+  }
+  // cross-fade the whole page where the browser can, instead of a flash
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches
+  if (document.startViewTransition && !calm) document.startViewTransition(apply)
+  else apply()
 }
 
 interface Look {

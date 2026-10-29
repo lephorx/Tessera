@@ -1,6 +1,12 @@
 "use client"
 
-import { X, CheckCircle2, Loader2, AlertCircle, ExternalLink } from "lucide-react"
+import {
+  X,
+  CheckCircle2,
+  Loader2,
+  AlertCircle,
+  ExternalLink,
+} from "lucide-react"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -19,7 +25,7 @@ export function ServerCreationProgress({ task, onDismiss }: Props) {
   const { stage, progress, step, name, serverId } = task
 
   return (
-    <div className="fixed right-4 bottom-4 z-50 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+    <div className="enter fixed right-4 bottom-4 z-50 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-lg modern:shadow-raised">
       {/* Header */}
       <div className="flex items-start justify-between px-3 pt-3 pb-1.5">
         <div className="min-w-0 pr-2">

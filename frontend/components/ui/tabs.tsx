@@ -45,19 +45,85 @@ const tabsListVariants = cva(
   }
 )
 
+/** modern: keeps a pill under the active trigger and slides it along */
+function useTabsIndicator(
+  listRef: React.RefObject<HTMLDivElement | null>,
+  indicatorRef: React.RefObject<HTMLSpanElement | null>
+) {
+  React.useLayoutEffect(() => {
+    const list = listRef.current
+    const indicator = indicatorRef.current
+    if (!list || !indicator) return
+    let first = true
+    let current: HTMLElement | null = null
+
+    const place = () => {
+      const active = list.querySelector<HTMLElement>(
+        '[data-slot="tabs-trigger"][data-state="active"]'
+      )
+      if (!active) {
+        indicator.style.opacity = "0"
+        return
+      }
+      // the first placement jumps there; later ones slide
+      indicator.dataset.ready = first ? "false" : "true"
+      indicator.style.opacity = "1"
+      indicator.style.width = `${active.offsetWidth}px`
+      indicator.style.height = `${active.offsetHeight}px`
+      indicator.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`
+      if (!first && active !== current)
+        active.scrollIntoView({ block: "nearest", inline: "nearest" })
+      current = active
+      first = false
+    }
+
+    place()
+    const mutations = new MutationObserver(place)
+    mutations.observe(list, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-state"],
+    })
+    const sizes = new ResizeObserver(place)
+    sizes.observe(list)
+    list
+      .querySelectorAll('[data-slot="tabs-trigger"]')
+      .forEach((trigger) => sizes.observe(trigger))
+    return () => {
+      mutations.disconnect()
+      sizes.disconnect()
+    }
+  }, [listRef, indicatorRef])
+}
+
 function TabsList({
   className,
   variant = "default",
+  children,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.List> &
   VariantProps<typeof tabsListVariants>) {
+  const listRef = React.useRef<HTMLDivElement>(null)
+  const indicatorRef = React.useRef<HTMLSpanElement>(null)
+  useTabsIndicator(listRef, indicatorRef)
+
   return (
     <TabsPrimitive.List
+      ref={listRef}
       data-slot="tabs-list"
       data-variant={variant}
-      className={cn(tabsListVariants({ variant }), className)}
+      className={cn(tabsListVariants({ variant }), "relative", className)}
       {...props}
-    />
+    >
+      <span
+        ref={indicatorRef}
+        aria-hidden
+        data-slot="tabs-indicator"
+        className="pointer-events-none absolute top-0 left-0 hidden rounded-[8px] bg-card opacity-0 shadow-[0_1px_2px_rgb(0_0_0/0.08),0_2px_6px_rgb(0_0_0/0.06)] data-[ready=true]:transition-[transform,width,height,opacity] data-[ready=true]:duration-[420ms] data-[ready=true]:ease-[cubic-bezier(0.32,0.72,0,1)] modern:block modern:dark:bg-[#636366]"
+      />
+      {children}
+    </TabsPrimitive.List>
   )
 }
 
@@ -72,7 +138,7 @@ function TabsTrigger({
         "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 has-data-[icon=inline-end]:pr-1 has-data-[icon=inline-start]:pl-1 dark:text-muted-foreground dark:hover:text-foreground group-data-[variant=default]/tabs-list:data-active:shadow-sm group-data-[variant=line]/tabs-list:data-active:shadow-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-active:bg-transparent dark:group-data-[variant=line]/tabs-list:data-active:border-transparent dark:group-data-[variant=line]/tabs-list:data-active:bg-transparent",
         "data-active:bg-background data-active:text-foreground dark:data-active:border-input dark:data-active:bg-input/30 dark:data-active:text-foreground",
-        "modern:h-full modern:flex-none modern:rounded-[8px] modern:border-0 modern:px-3 modern:text-[13px] modern:text-foreground/70 modern:after:hidden modern:hover:text-foreground modern:data-active:border-transparent! modern:data-active:bg-card! modern:data-active:text-foreground modern:data-active:shadow-[0_1px_2px_rgb(0_0_0/0.08),0_2px_6px_rgb(0_0_0/0.06)]! modern:dark:data-active:bg-[#636366]!",
+        "modern:z-[1] modern:h-full modern:flex-none modern:rounded-[8px] modern:border-0 modern:px-3 modern:text-[13px] modern:text-foreground/70 modern:transition-colors modern:duration-200 modern:after:hidden modern:hover:text-foreground modern:data-active:border-transparent! modern:data-active:bg-transparent! modern:data-active:text-foreground modern:data-active:shadow-none!",
         "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-horizontal/tabs:after:inset-x-0 group-data-horizontal/tabs:after:bottom-[-5px] group-data-horizontal/tabs:after:h-0.5 group-data-vertical/tabs:after:inset-y-0 group-data-vertical/tabs:after:-right-1 group-data-vertical/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-active:after:opacity-100",
         className
       )}

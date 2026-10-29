@@ -43,6 +43,7 @@ export function CopyButton({
       title={copied ? "Copied" : label}
       className={cn(
         "inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        "modern:rounded-full modern:transition-[background-color,color,scale] modern:duration-300 modern:ease-[cubic-bezier(0.34,1.56,0.64,1)] modern:hover:bg-fill modern:active:scale-90 modern:active:duration-75",
         className
       )}
       onClick={(e) => {
@@ -58,10 +59,14 @@ export function CopyButton({
           .catch(() => toast.error("Could not copy. Select the text instead."))
       }}
     >
+      {/* modern: the icons swap with a small pop */}
       {copied ? (
-        <Check className="size-3.5 text-emerald-500" />
+        <Check
+          key="copied"
+          className="size-3.5 text-emerald-500 modern:animate-in modern:text-status-green modern:duration-300 modern:fade-in-0 modern:zoom-in-50"
+        />
       ) : (
-        <Copy className="size-3.5" />
+        <Copy key="copy" className="size-3.5" />
       )}
     </button>
   )

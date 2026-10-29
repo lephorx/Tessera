@@ -257,7 +257,7 @@ export default function DashboardPage() {
 
       <main className="mx-auto max-w-screen-xl px-6 py-8 modern:pt-10">
         {/* Page header */}
-        <div className="mb-8 flex items-center justify-between modern:mb-7 modern:items-end">
+        <div className="enter mb-8 flex items-center justify-between modern:mb-7 modern:items-end">
           <div>
             <h1 className="text-xl font-semibold modern:text-[32px] modern:leading-tight modern:font-bold">
               Servers
@@ -284,11 +284,36 @@ export default function DashboardPage() {
 
         {/* Server grid */}
         {loading ? (
-          <div className="flex h-48 items-center justify-center">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
-          </div>
+          <>
+            <div className="flex h-48 items-center justify-center modern:hidden">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+            {/* modern: placeholder cards in the shape of the real ones */}
+            <div
+              aria-hidden
+              className="hidden gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 modern:grid"
+            >
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 shadow-surface"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="skeleton size-12 rounded-[12px]" />
+                    <div className="flex-1 space-y-2">
+                      <div className="skeleton h-3.5 w-2/3" />
+                      <div className="skeleton h-3 w-1/3" />
+                    </div>
+                  </div>
+                  <div className="skeleton h-3 w-1/2" />
+                  <div className="skeleton h-8 rounded-[10px]" />
+                  <div className="skeleton h-7 rounded-full" />
+                </div>
+              ))}
+            </div>
+          </>
         ) : cards.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-3 text-muted-foreground">
+          <div className="enter flex h-64 flex-col items-center justify-center gap-3 text-muted-foreground">
             <ServerOff className="size-10 opacity-40" />
             <p className="text-sm">No servers yet.</p>
             <Button variant="outline" onClick={() => setCreateOpen(true)}>
@@ -297,7 +322,7 @@ export default function DashboardPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 modern:gap-5">
+          <div className="stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 modern:gap-5">
             {cards.map((server) => (
               <ServerCard
                 key={server.id}
