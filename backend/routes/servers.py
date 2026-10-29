@@ -14,11 +14,13 @@ from db import get_db
 from docker_manager import SERVER_TYPES
 from logger import get_logger
 from server_manager import (
+    active_progress,
     _create_server_record,
     _provision_resources,
     create_server_tunnel,
     deprovision_server,
     list_servers,
+    playit_configured,
     provision_server,
     rename_server_subdomain,
 )
@@ -93,6 +95,8 @@ def get_server_detail(server_id: int):
 
     server = _serialize_server(row)
     server["cloudflare_available"] = cloudflare_enabled()
+    server["playit_configured"] = playit_configured()
+    server["progress"] = active_progress(server_id)
     server["tunnels"] = [
         {"address": t["tunnel_address"], "local_port": t["local_port"], "external_port": t["external_port"]}
         for t in tunnels

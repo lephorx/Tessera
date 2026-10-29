@@ -16,6 +16,7 @@ Public functions:
 import asyncio
 import os
 import sys
+import threading
 import dns.resolver
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
@@ -67,6 +68,18 @@ TUNNEL_PORT         = os.getenv("TUNNEL_PORT", "25565")
 # Milliseconds to wait for page elements before raising a timeout error
 TIMEOUT = 30000
 
+# Why the last create_tunnel call in this thread failed, shown in the dashboard.
+_last = threading.local()
+
+
+def last_error() -> str | None:
+    """Reason the most recent create_tunnel() in this thread returned None."""
+    return getattr(_last, "error", None)
+
+
+def _fail(reason: str) -> None:
+    _last.error = reason
+
 
 async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | None = None, subscription: str | None = None, agent: str | None = None, protocol: str = "java") -> str | None:
     """Create a PlayIT tunnel with the given name and local port.
@@ -93,10 +106,13 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
         no SRV-based port discovery so playit embeds the port directly.
         ``None`` on failure.
     """
+    _last.error = None
     if not _email() or not _password():
         log.error("PLAYIT_EMAIL and PLAYIT_PASSWORD environment variables are required")
+        _fail("Your Playit email and password aren't set. Add them in Connection settings.")
         return None
 
+    step = "starting the browser"
     selected_region = region or _region()
     selected_subscription = (subscription or _subscription()).lower()
     selected_agent = agent or _agent()
@@ -123,13 +139,16 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             )
             page = await context.new_page()
 
+            step = "signing in to playit.gg"
             if not await _login(page):
+                _fail("Could not sign in to playit.gg. Check the email and password in Connection settings.")
                 await context.close()
                 await browser.close()
                 return None
 
             await asyncio.sleep(1)
 
+            step = "opening the new tunnel page"
             log.debug("Navigating to Tunnels section")
             await page.goto("https://playit.gg/account/tunnels", wait_until="networkidle")
             await asyncio.sleep(1)
@@ -148,6 +167,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await page.click('button[type="submit"]')
             await asyncio.sleep(1)
 
+            step = "choosing the Minecraft protocol"
             # Select protocol tile. All protocol tiles share the "_15pr4g97"
             # class (e.g. <div class="_15pr4g97"><img .../><span
             # class="_15pr4g9d">Minecraft Bedrock</span></div>); the label
@@ -166,6 +186,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await page.click('button[type="submit"]')
             await asyncio.sleep(1)
 
+            step = "choosing the region"
             # Select region. The step opens on the "Gateways" tab (premium
             # dedicated gateways); the shared regions live under the
             # "Playit Network" tab, so switch to it first.
@@ -190,6 +211,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await _click_next(page)
             await asyncio.sleep(1)
 
+            step = "choosing the Playit agent"
             # Select agent
             if not await _select_agent(page, selected_agent):
                 log.warning("Agent selection may have failed; continuing anyway")
@@ -200,6 +222,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await _click_next(page)
             await asyncio.sleep(1)
 
+            step = "setting the local port"
             # Set local port
             log.debug("Setting local port: %s", tunnel_port)
             await page.fill('input[placeholder="NULL"]', str(tunnel_port))
@@ -213,6 +236,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await page.click('button[type="submit"]')
             await asyncio.sleep(2)
 
+            step = "waiting for playit.gg to assign an address"
             log.info("Waiting for tunnel address allocation")
             # Java addresses look like "abc123.joinmc.link" (no port — SRV
             # discovery handles that); Bedrock addresses embed the port
@@ -238,10 +262,15 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             return address
 
     except PlaywrightTimeoutError:
-        log.error("Tunnel creation timed out waiting for a page element")
+        log.error("Tunnel creation timed out while %s", step)
+        _fail(
+            f"playit.gg didn't respond while {step}. The site may be down, your free "
+            "tunnel limit may be reached, or playit.gg changed its pages."
+        )
         return None
     except Exception as exc:
         log.exception("Unexpected error during tunnel creation: %s", exc)
+        _fail(f"Tunnel creation failed while {step}: {exc}")
         return None
 
 

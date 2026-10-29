@@ -44,7 +44,9 @@ export function useServerCreation(onServerCreated?: () => void) {
           const percent: number = res?.percent ?? 0
           const step: string = res?.step ?? ""
           const status: string = res?.status ?? ""
-          const done = status === "done" || percent >= 100
+          const done =
+            status === "completed" || status === "done" || percent >= 100
+          const failed = status === "failed" || status === "error"
 
           setTask((prev) => {
             if (!prev || prev.serverId !== serverId) return prev
@@ -53,12 +55,12 @@ export function useServerCreation(onServerCreated?: () => void) {
               // Progress only ever moves forward, even if a poll returns a
               // lower number than what's already on screen.
               progress: done ? 100 : Math.max(prev.progress, percent),
-              step: step || prev.step,
-              stage: done ? "ready" : status === "error" ? "error" : "starting",
+              step: (failed && res?.message) || step || prev.step,
+              stage: done ? "ready" : failed ? "error" : "starting",
             }
           })
 
-          if (done || status === "error") {
+          if (done || failed) {
             stopTimers()
             if (done) onServerCreated?.()
           }

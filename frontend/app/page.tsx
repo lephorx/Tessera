@@ -41,7 +41,12 @@ export default function DashboardPage() {
     completed: boolean
     public_available: boolean
   } | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  // other pages link to /?settings=1 to open the connection settings
+  const [settingsOpen, setSettingsOpen] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("settings")
+  )
 
   const loadSetup = useCallback(async () => {
     try {
@@ -156,6 +161,7 @@ export default function DashboardPage() {
           firstRun={!setup.completed}
           onDone={() => {
             setSettingsOpen(false)
+            window.history.replaceState(null, "", "/")
             loadSetup()
           }}
         />
@@ -243,7 +249,10 @@ export default function DashboardPage() {
 
       {/* Floating progress — shown when modal is closed but creation is still running */}
       {creationTask && !createOpen && (
-        <ServerCreationProgress task={creationTask} onDismiss={dismissCreation} />
+        <ServerCreationProgress
+          task={creationTask}
+          onDismiss={dismissCreation}
+        />
       )}
     </div>
   )

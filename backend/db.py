@@ -42,6 +42,10 @@ def _migrate_schema() -> None:
             conn.execute("ALTER TABLE servers ADD COLUMN loader_version TEXT")
         if "local_only" not in server_cols:
             conn.execute("ALTER TABLE servers ADD COLUMN local_only INTEGER NOT NULL DEFAULT 0")
+        if "tunnel_error" not in server_cols:
+            conn.execute("ALTER TABLE servers ADD COLUMN tunnel_error TEXT")
+        if "dns_error" not in server_cols:
+            conn.execute("ALTER TABLE servers ADD COLUMN dns_error TEXT")
 
 
 def fetch_server(server_id: int) -> sqlite3.Row | None:

@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS servers (
     -- anyone on the same network can connect directly, but there's no public
     -- tunnel. POST /api/servers/<id>/tunnel can add one later.
     local_only    INTEGER NOT NULL DEFAULT 0,
+    -- Why the last PlayIT tunnel / Cloudflare DNS attempt failed (NULL = fine)
+    tunnel_error  TEXT,
+    dns_error     TEXT,
     createdat     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

@@ -10,10 +10,12 @@ import {
   Settings,
   Users,
   Network,
+  TriangleAlert,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import {
   Dialog,
   DialogContent,
@@ -40,6 +42,9 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
   const [confirmAction, setConfirmAction] = useState<Action>(null)
 
   const isRunning = stats?.running ?? false
+  const progress = server.progress
+  const busy = progress?.status === "in_progress"
+  const deleting = busy && progress?.action === "delete"
 
   const statusDot = isRunning ? "bg-emerald-500" : "bg-zinc-400"
 
@@ -73,7 +78,9 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
 
   return (
     <>
-      <div className="flex flex-col gap-4 border border-border bg-card p-5">
+      <div
+        className={`flex flex-col gap-4 border border-border bg-card p-5 ${deleting ? "opacity-60" : ""}`}
+      >
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -109,12 +116,54 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
           </span>
         </div>
 
+        {/* Creation / deletion in progress, or why it failed */}
+        {progress && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span
+                className={`flex min-w-0 items-center gap-1.5 ${progress.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                {busy ? (
+                  <Loader2 className="size-3 shrink-0 animate-spin" />
+                ) : (
+                  <TriangleAlert className="size-3 shrink-0" />
+                )}
+                <span
+                  className="truncate"
+                  title={progress.message ?? progress.step ?? ""}
+                >
+                  {progress.status === "failed"
+                    ? `${progress.action === "delete" ? "Deletion" : "Setup"} failed: ${progress.message ?? progress.step}`
+                    : `${deleting ? "Deleting" : "Creating"}: ${progress.step ?? "working"}`}
+                </span>
+              </span>
+              {busy && (
+                <span className="shrink-0 text-muted-foreground tabular-nums">
+                  {progress.percent}%
+                </span>
+              )}
+            </div>
+            {busy && <Progress value={progress.percent} className="h-1" />}
+          </div>
+        )}
+
         {/* PlayIT tunnel */}
         {server.local_only ? (
           <p className="truncate text-xs text-muted-foreground">
             Local only —{" "}
             {typeof window !== "undefined" ? window.location.hostname : "—"}
           </p>
+        ) : server.tunnels.length === 0 ? (
+          !progress &&
+          (server.tunnel_error || server.playit_configured === false) && (
+            <p
+              className="flex items-center gap-1.5 truncate text-xs text-amber-600 dark:text-amber-400"
+              title={server.tunnel_error ?? "Playit isn't set up"}
+            >
+              <TriangleAlert className="size-3 shrink-0" />
+              No public address. Open the server for details.
+            </p>
+          )
         ) : (
           server.tunnels.length > 0 && (
             <div className="text-xs text-muted-foreground">
@@ -133,7 +182,7 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
           <Button
             size="sm"
             className="flex-1 bg-emerald-600 text-white hover:bg-emerald-700"
-            disabled={isRunning || loadingAction !== null}
+            disabled={busy || isRunning || loadingAction !== null}
             onClick={() => execAction("start")}
             aria-label="Start server"
           >
@@ -147,7 +196,7 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
           <Button
             size="sm"
             className="flex-1 bg-amber-500 text-white hover:bg-amber-600"
-            disabled={!isRunning || loadingAction !== null}
+            disabled={busy || !isRunning || loadingAction !== null}
             onClick={() => setConfirmAction("stop")}
             aria-label="Stop server"
           >
@@ -162,7 +211,7 @@ export function ServerCard({ server, stats, onRefresh }: Props) {
             size="sm"
             variant="destructive"
             className="flex-1"
-            disabled={loadingAction !== null}
+            disabled={busy || loadingAction !== null}
             onClick={() => setConfirmAction("kill")}
             aria-label="Kill server"
           >

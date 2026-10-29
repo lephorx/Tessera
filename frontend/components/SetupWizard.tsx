@@ -14,10 +14,27 @@ import { cn } from "@/lib/utils"
 const PLAYIT_AGENT_WIZARD =
   "https://playit.gg/account/setup/wizard/new-account/docker/docker-name"
 const REGIONS = [
-  "Germany", "United Kingdom", "Sweden", "Poland", "Romania", "Europe",
-  "Atlanta", "California", "Chicago", "Dallas", "Denver", "Miami",
-  "New York", "Seattle", "North America", "India", "Japan", "Asia",
-  "Brazil", "Chile", "Australia",
+  "Germany",
+  "United Kingdom",
+  "Sweden",
+  "Poland",
+  "Romania",
+  "Europe",
+  "Atlanta",
+  "California",
+  "Chicago",
+  "Dallas",
+  "Denver",
+  "Miami",
+  "New York",
+  "Seattle",
+  "North America",
+  "India",
+  "Japan",
+  "Asia",
+  "Brazil",
+  "Chile",
+  "Australia",
 ]
 
 type Step = "mode" | "playit" | "agent" | "cloudflare"
@@ -45,10 +62,13 @@ interface Props {
 
 // Connection setup after account creation. Every step is saved to the
 // installation's .env as soon as the user continues, and the current step is
-// stored on the server, so the wizard resumes where it was left.
+// stored on the server, so the wizard resumes where it was left. Opened from
+// the top bar once something is configured, it shows all settings as one
+// form instead; "Run setup again" switches back to the wizard.
 export function SetupWizard({ firstRun, onDone }: Props) {
   const [loaded, setLoaded] = useState<SettingsResponse | null>(null)
   const [step, setStep] = useState<Step>("mode")
+  const [wizard, setWizard] = useState(firstRun)
   const [saving, setSaving] = useState(false)
 
   // form state (secrets stay empty unless the user types a new one)
@@ -71,25 +91,41 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         const v = res.values
         setLoaded(res)
         setStep(firstRun ? res.setup.step : "mode")
+        const configured =
+          !!v.PLAYIT_EMAIL ||
+          !!v.CLOUDFLARE_ZONE_ID ||
+          Object.values(res.secrets_set).some(Boolean)
+        setWizard(firstRun || !configured)
         setEmail(v.PLAYIT_EMAIL ?? "")
         setSubscription(v.PLAYIT_SUBSCRIPTION || "free")
         setRegion(v.PLAYIT_REGION || "Germany")
         setAgentName(v.PLAYIT_AGENT ?? "")
         setAgentMode(
-          res.secrets_set.PLAYIT_SECRET_KEY || res.agent.managed || !v.PLAYIT_AGENT
+          res.secrets_set.PLAYIT_SECRET_KEY ||
+            res.agent.managed ||
+            !v.PLAYIT_AGENT
             ? "managed"
             : "existing"
         )
         setCfEnabled(
-          (v.CLOUDFLARE_ENABLED || "false") !== "false" && !!v.CLOUDFLARE_ZONE_ID
+          (v.CLOUDFLARE_ENABLED || "false") !== "false" &&
+            !!v.CLOUDFLARE_ZONE_ID
         )
         setCfZone(v.CLOUDFLARE_ZONE_ID ?? "")
         setCfDomain(v.CLOUDFLARE_BASE_DOMAIN ?? "")
       })
       .catch((err) =>
-        toast.error(err instanceof Error ? err.message : "Could not load settings")
+        toast.error(
+          err instanceof Error ? err.message : "Could not load settings"
+        )
       )
   }, [firstRun])
+
+  // after a section is saved from the settings form
+  const saved = (what: string) => async () => {
+    toast.success(`${what} saved`)
+    setLoaded(await api.settings.get())
+  }
 
   async function run(action: () => Promise<void>) {
     setSaving(true)
@@ -118,7 +154,9 @@ export function SetupWizard({ firstRun, onDone }: Props) {
       onDone()
     })
 
-  const saveAccount = () =>
+  const saveAccount = (
+    after: () => void | Promise<void> = () => goTo("agent")
+  ) =>
     run(async () => {
       if (!email.trim()) throw new Error("Enter your Playit email.")
       if (!password && !loaded?.secrets_set.PLAYIT_PASSWORD)
@@ -130,10 +168,13 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         PLAYIT_REGION: region,
       })
       await api.setup.update({ mode: "public" })
-      goTo("agent")
+      setPassword("")
+      await after()
     })
 
-  const saveAgent = () =>
+  const saveAgent = (
+    after: () => void | Promise<void> = () => goTo("cloudflare")
+  ) =>
     run(async () => {
       if (agentMode === "managed") {
         if (!secretKey && !loaded?.secrets_set.PLAYIT_SECRET_KEY)
@@ -147,10 +188,13 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         await api.settings.save({ PLAYIT_AGENT: agentName.trim() })
         if (loaded?.agent.source === "cscm") await api.settings.stopAgent()
       }
-      goTo("cloudflare")
+      setSecretKey("")
+      await after()
     })
 
-  const saveCloudflare = () =>
+  const saveCloudflare = (
+    after: () => void | Promise<void> = () => finish("public")
+  ) =>
     run(async () => {
       if (cfEnabled) {
         if (!cfZone.trim() || !cfDomain.trim())
@@ -164,7 +208,8 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         CLOUDFLARE_ZONE_ID: cfEnabled ? cfZone.trim() : null,
         CLOUDFLARE_BASE_DOMAIN: cfEnabled ? cfDomain.trim() : null,
       })
-      await finish("public")
+      setCfToken("")
+      await after()
     })
 
   if (!loaded) {
@@ -176,7 +221,292 @@ export function SetupWizard({ firstRun, onDone }: Props) {
   }
 
   const stepIndex = STEPS.indexOf(step)
-  const savedHint = (set: boolean) => (set ? "Saved. Leave empty to keep it." : "")
+  const savedHint = (set: boolean) =>
+    set ? "Saved. Leave empty to keep it." : ""
+
+  const playitFields = (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        CSCM creates the tunnels for your servers with your{" "}
+        <a
+          href="https://playit.gg"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-4"
+        >
+          Playit.gg
+        </a>{" "}
+        account.
+      </p>
+      <div className="space-y-1.5">
+        <Label htmlFor="playit-email">Playit email</Label>
+        <Input
+          id="playit-email"
+          type="email"
+          autoComplete="off"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="playit-password">Playit password</Label>
+        <Input
+          id="playit-password"
+          type="password"
+          autoComplete="new-password"
+          placeholder={loaded.secrets_set.PLAYIT_PASSWORD ? "••••••••" : ""}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          {savedHint(loaded.secrets_set.PLAYIT_PASSWORD)}
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <Label>Subscription</Label>
+        <div className="flex gap-2">
+          {["free", "premium"].map((s) => (
+            <Button
+              key={s}
+              type="button"
+              size="sm"
+              variant={subscription === s ? "default" : "outline"}
+              onClick={() => setSubscription(s)}
+            >
+              {s === "free" ? "Free" : "Premium"}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {subscription === "premium" && (
+        <div className="space-y-1.5">
+          <Label htmlFor="playit-region">Region</Label>
+          <select
+            id="playit-region"
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+          >
+            {REGIONS.map((r) => (
+              <option key={r} value={r} className="bg-background">
+                {r}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  )
+
+  const agentFields = (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        A Playit agent on this device carries the traffic to your servers.
+      </p>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={agentMode === "managed" ? "default" : "outline"}
+          onClick={() => setAgentMode("managed")}
+        >
+          Let CSCM run it
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={agentMode === "existing" ? "default" : "outline"}
+          onClick={() => setAgentMode("existing")}
+        >
+          I already run one
+        </Button>
+      </div>
+
+      {agentMode === "managed" ? (
+        <>
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>
+              Create or claim an agent in the{" "}
+              <a
+                href={PLAYIT_AGENT_WIZARD}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 underline underline-offset-4"
+              >
+                Playit Docker setup <ExternalLink className="size-3" />
+              </a>
+              .
+            </li>
+            <li>Copy its SECRET_KEY and paste it below.</li>
+          </ol>
+          <div className="space-y-1.5">
+            <Label htmlFor="playit-secret">Agent SECRET_KEY</Label>
+            <Input
+              id="playit-secret"
+              type="password"
+              autoComplete="off"
+              placeholder={
+                loaded.secrets_set.PLAYIT_SECRET_KEY ? "••••••••" : ""
+              }
+              value={secretKey}
+              onChange={(e) => setSecretKey(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              {savedHint(loaded.secrets_set.PLAYIT_SECRET_KEY)}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            On macOS and Windows, first enable{" "}
+            <strong>
+              Settings → Resources → Network → Enable host networking
+            </strong>{" "}
+            in Docker Desktop (4.34 or newer).
+          </p>
+        </>
+      ) : (
+        <div className="space-y-1.5">
+          <Label htmlFor="playit-agent">Agent name (optional)</Label>
+          <Input
+            id="playit-agent"
+            placeholder="First available agent"
+            value={agentName}
+            onChange={(e) => setAgentName(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Keep that agent running on this device.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+
+  const cloudflareFields = (
+    <div className="space-y-4">
+      <label className="flex items-center justify-between gap-3 text-sm">
+        <span>
+          <span className="block font-medium">
+            Use my own domain (optional)
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            Give servers addresses like survival.example.com through Cloudflare.
+            Otherwise players use the Playit address.
+          </span>
+        </span>
+        <Switch checked={cfEnabled} onCheckedChange={setCfEnabled} />
+      </label>
+      {cfEnabled && (
+        <>
+          <div className="space-y-1.5">
+            <Label htmlFor="cf-token">Cloudflare API token</Label>
+            <Input
+              id="cf-token"
+              type="password"
+              autoComplete="off"
+              placeholder={
+                loaded.secrets_set.CLOUDFLARE_API_TOKEN ? "••••••••" : ""
+              }
+              value={cfToken}
+              onChange={(e) => setCfToken(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              {savedHint(loaded.secrets_set.CLOUDFLARE_API_TOKEN) ||
+                "Needs permission to edit DNS for your zone."}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cf-zone">Zone ID</Label>
+            <Input
+              id="cf-zone"
+              value={cfZone}
+              onChange={(e) => setCfZone(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cf-domain">Base domain</Label>
+            <Input
+              id="cf-domain"
+              placeholder="example.com"
+              value={cfDomain}
+              onChange={(e) => setCfDomain(e.target.value)}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  )
+
+  const envWarning = !loaded.env_writable && (
+    <p className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+      CSCM can&apos;t write to <code>.env</code> in this installation. Update
+      CSCM, or add the values to <code>.env</code> by hand and run{" "}
+      <code>docker compose restart api</code>.
+    </p>
+  )
+
+  if (!wizard) {
+    const sections = [
+      {
+        title: "Playit account",
+        fields: playitFields,
+        save: () => saveAccount(saved("Playit account")),
+      },
+      {
+        title: "Playit agent",
+        fields: agentFields,
+        save: () => saveAgent(saved("Agent settings")),
+      },
+      {
+        title: "Custom domain",
+        fields: cloudflareFields,
+        save: () => saveCloudflare(saved("Custom domain")),
+      },
+    ]
+    return (
+      <div className="mx-auto w-full max-w-xl px-6 py-10">
+        <p className="text-xs tracking-widest text-muted-foreground uppercase">
+          Settings
+        </p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+          Connection settings
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {loaded.setup.mode === "local"
+            ? "CSCM is set to local network only. Saving a Playit account turns public addresses on."
+            : "Each section is saved to your installation's .env on its own."}
+        </p>
+        {envWarning}
+        <div className="mt-8 space-y-6">
+          {sections.map((section) => (
+            <section
+              key={section.title}
+              className="rounded-lg border border-border p-6"
+            >
+              <h2 className="mb-4 text-sm font-semibold">{section.title}</h2>
+              {section.fields}
+              <div className="mt-5 flex justify-end">
+                <Button size="sm" disabled={saving} onClick={section.save}>
+                  {saving && <Loader2 className="size-3.5 animate-spin" />}
+                  Save
+                </Button>
+              </div>
+            </section>
+          ))}
+        </div>
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setStep("mode")
+              setWizard(true)
+            }}
+          >
+            Run setup again
+          </Button>
+          <Button onClick={onDone}>Done</Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto w-full max-w-xl px-6 py-10">
@@ -192,13 +522,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         directly.
       </p>
 
-      {!loaded.env_writable && (
-        <p className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-          CSCM can&apos;t write to <code>.env</code> in this installation. Update
-          CSCM, or add the values to <code>.env</code> by hand and run{" "}
-          <code>docker compose restart api</code>.
-        </p>
-      )}
+      {envWarning}
 
       {/* progress */}
       <ol className="mt-8 flex gap-2">
@@ -257,215 +581,11 @@ export function SetupWizard({ firstRun, onDone }: Props) {
           </div>
         )}
 
-        {step === "playit" && (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              CSCM creates the tunnels for your servers with your{" "}
-              <a
-                href="https://playit.gg"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline underline-offset-4"
-              >
-                Playit.gg
-              </a>{" "}
-              account.
-            </p>
-            <div className="space-y-1.5">
-              <Label htmlFor="playit-email">Playit email</Label>
-              <Input
-                id="playit-email"
-                type="email"
-                autoComplete="off"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="playit-password">Playit password</Label>
-              <Input
-                id="playit-password"
-                type="password"
-                autoComplete="new-password"
-                placeholder={loaded.secrets_set.PLAYIT_PASSWORD ? "••••••••" : ""}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                {savedHint(loaded.secrets_set.PLAYIT_PASSWORD)}
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Subscription</Label>
-              <div className="flex gap-2">
-                {["free", "premium"].map((s) => (
-                  <Button
-                    key={s}
-                    type="button"
-                    size="sm"
-                    variant={subscription === s ? "default" : "outline"}
-                    onClick={() => setSubscription(s)}
-                  >
-                    {s === "free" ? "Free" : "Premium"}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            {subscription === "premium" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="playit-region">Region</Label>
-                <select
-                  id="playit-region"
-                  value={region}
-                  onChange={(e) => setRegion(e.target.value)}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                >
-                  {REGIONS.map((r) => (
-                    <option key={r} value={r} className="bg-background">
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-        )}
+        {step === "playit" && playitFields}
 
-        {step === "agent" && (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              A Playit agent on this device carries the traffic to your
-              servers.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={agentMode === "managed" ? "default" : "outline"}
-                onClick={() => setAgentMode("managed")}
-              >
-                Let CSCM run it
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={agentMode === "existing" ? "default" : "outline"}
-                onClick={() => setAgentMode("existing")}
-              >
-                I already run one
-              </Button>
-            </div>
+        {step === "agent" && agentFields}
 
-            {agentMode === "managed" ? (
-              <>
-                <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-                  <li>
-                    Create or claim an agent in the{" "}
-                    <a
-                      href={PLAYIT_AGENT_WIZARD}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 underline underline-offset-4"
-                    >
-                      Playit Docker setup <ExternalLink className="size-3" />
-                    </a>
-                    .
-                  </li>
-                  <li>Copy its SECRET_KEY and paste it below.</li>
-                </ol>
-                <div className="space-y-1.5">
-                  <Label htmlFor="playit-secret">Agent SECRET_KEY</Label>
-                  <Input
-                    id="playit-secret"
-                    type="password"
-                    autoComplete="off"
-                    placeholder={loaded.secrets_set.PLAYIT_SECRET_KEY ? "••••••••" : ""}
-                    value={secretKey}
-                    onChange={(e) => setSecretKey(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {savedHint(loaded.secrets_set.PLAYIT_SECRET_KEY)}
-                  </p>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  On macOS and Windows, first enable{" "}
-                  <strong>
-                    Settings → Resources → Network → Enable host networking
-                  </strong>{" "}
-                  in Docker Desktop (4.34 or newer).
-                </p>
-              </>
-            ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="playit-agent">Agent name (optional)</Label>
-                <Input
-                  id="playit-agent"
-                  placeholder="First available agent"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Keep that agent running on this device.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {step === "cloudflare" && (
-          <div className="space-y-4">
-            <label className="flex items-center justify-between gap-3 text-sm">
-              <span>
-                <span className="block font-medium">
-                  Use my own domain (optional)
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  Give servers addresses like survival.example.com through
-                  Cloudflare. Otherwise players use the Playit address.
-                </span>
-              </span>
-              <Switch checked={cfEnabled} onCheckedChange={setCfEnabled} />
-            </label>
-            {cfEnabled && (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="cf-token">Cloudflare API token</Label>
-                  <Input
-                    id="cf-token"
-                    type="password"
-                    autoComplete="off"
-                    placeholder={
-                      loaded.secrets_set.CLOUDFLARE_API_TOKEN ? "••••••••" : ""
-                    }
-                    value={cfToken}
-                    onChange={(e) => setCfToken(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {savedHint(loaded.secrets_set.CLOUDFLARE_API_TOKEN) ||
-                      "Needs permission to edit DNS for your zone."}
-                  </p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="cf-zone">Zone ID</Label>
-                  <Input
-                    id="cf-zone"
-                    value={cfZone}
-                    onChange={(e) => setCfZone(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="cf-domain">Base domain</Label>
-                  <Input
-                    id="cf-domain"
-                    placeholder="example.com"
-                    value={cfDomain}
-                    onChange={(e) => setCfDomain(e.target.value)}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        {step === "cloudflare" && cloudflareFields}
       </div>
 
       <div className="mt-6 flex items-center justify-between gap-3">
@@ -488,12 +608,12 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         {step !== "mode" && (
           <Button
             disabled={saving}
-            onClick={
+            onClick={() =>
               step === "playit"
-                ? saveAccount
+                ? saveAccount()
                 : step === "agent"
-                  ? saveAgent
-                  : saveCloudflare
+                  ? saveAgent()
+                  : saveCloudflare()
             }
           >
             {saving ? (

@@ -15,6 +15,7 @@ import {
   Pencil,
   Settings2,
   RefreshCw,
+  TriangleAlert,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -198,7 +199,7 @@ export default function ServerDetailPage() {
     setDeleteOpen(false)
     try {
       await api.servers.delete(serverId)
-      toast.success("Server deleted")
+      toast.success("Deleting server. Progress is shown on the dashboard.")
       window.location.href = "/"
     } catch (err) {
       toast.error(
@@ -245,7 +246,9 @@ export default function ServerDetailPage() {
     try {
       await api.bedrock.setCheats(serverId, next)
       setCheatsEnabled(next)
-      toast.success(`Cheats ${next ? "enabled" : "disabled"} — server restarted`)
+      toast.success(
+        `Cheats ${next ? "enabled" : "disabled"} — server restarted`
+      )
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to change cheats setting"
@@ -258,7 +261,9 @@ export default function ServerDetailPage() {
   async function handleSetupTunnel() {
     setTunneling(true)
     try {
-      const result = await api.control.tunnel(serverId) as { warning?: string }
+      const result = (await api.control.tunnel(serverId)) as {
+        warning?: string
+      }
       toast.success(result.warning ?? "Public address ready")
       await refreshServerMeta()
     } catch (err) {
@@ -270,17 +275,43 @@ export default function ServerDetailPage() {
     }
   }
 
+  async function handleRetryDns() {
+    if (!server) return
+    setRenaming(true)
+    try {
+      const result = (await api.control.subdomain(serverId, server.slug)) as {
+        warning?: string
+      }
+      toast.success(result.warning ?? "Custom address ready")
+      await refreshServerMeta()
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to set up the custom address"
+      )
+      await refreshServerMeta()
+    } finally {
+      setRenaming(false)
+    }
+  }
+
   async function handleRenameSubdomain(e: React.FormEvent) {
     e.preventDefault()
     if (!renameValue.trim()) return
     setRenaming(true)
     try {
-      const result = await api.control.subdomain(serverId, renameValue.trim()) as { warning?: string }
+      const result = (await api.control.subdomain(
+        serverId,
+        renameValue.trim()
+      )) as { warning?: string }
       toast.success(result.warning ?? "Custom address updated")
       setRenameOpen(false)
       await refreshServerMeta()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update address")
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update address"
+      )
     } finally {
       setRenaming(false)
     }
@@ -476,45 +507,152 @@ export default function ServerDetailPage() {
         {server.local_only ? (
           <div className="mb-6 flex items-center justify-between gap-4 border border-border bg-muted/40 px-4 py-3">
             <div className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">Local address: </span>
-              {typeof window !== "undefined" ? window.location.hostname : "—"}:{server.port}
-              <p className="mt-1 text-[11px]">Reachable from your local network. Set up a Playit tunnel for public access.</p>
+              <span className="font-medium text-foreground">
+                Local address:{" "}
+              </span>
+              {typeof window !== "undefined" ? window.location.hostname : "—"}:
+              {server.port}
+              <p className="mt-1 text-[11px]">
+                Reachable from your local network. Set up a Playit tunnel for
+                public access.
+              </p>
             </div>
-            <Button size="sm" variant="outline" onClick={handleSetupTunnel} disabled={tunneling}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSetupTunnel}
+              disabled={tunneling}
+            >
               {tunneling && <Loader2 className="size-3.5 animate-spin" />}
               Set up Playit tunnel
             </Button>
           </div>
         ) : server.tunnels.length > 0 ? (
-          <div className="mb-6 flex items-center justify-between gap-4 border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
-            <div>
-            <span className="font-medium text-foreground">
-              {server.type === "bedrock" ? "Address: " : "Connect: "}
-            </span>
-            {serverConnectAddress(server)}
-            {server.dns_records.some((record) => record.type === "CNAME") && (
-              <p className="mt-1 text-[11px]">Playit address: {server.tunnels[0].address}</p>
-            )}
-            {server.type === "bedrock" && (
-              <>
-                <span className="ml-4 font-medium text-foreground">Port: </span>
-                {server.tunnels[0].external_port ?? "See Playit dashboard"}
-                <p className="mt-1 text-[11px]">Enter the address and port separately in Bedrock.</p>
-              </>
-            )}
+          <div className="mb-6 border border-border bg-muted/40 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div>
+                <span className="font-medium text-foreground">
+                  {server.type === "bedrock" ? "Address: " : "Connect: "}
+                </span>
+                {serverConnectAddress(server)}
+                {server.dns_records.some(
+                  (record) => record.type === "CNAME"
+                ) && (
+                  <p className="mt-1 text-[11px]">
+                    Playit address: {server.tunnels[0].address}
+                  </p>
+                )}
+                {server.type === "bedrock" && (
+                  <>
+                    <span className="ml-4 font-medium text-foreground">
+                      Port:{" "}
+                    </span>
+                    {server.tunnels[0].external_port ?? "See Playit dashboard"}
+                    <p className="mt-1 text-[11px]">
+                      Enter the address and port separately in Bedrock.
+                    </p>
+                  </>
+                )}
+              </div>
+              {server.cloudflare_available && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setRenameValue(
+                      server.dns_records
+                        .find((record) => record.type === "CNAME")
+                        ?.name.split(".")[0] ?? server.slug
+                    )
+                    setRenameOpen(true)
+                  }}
+                >
+                  <Pencil className="size-3.5" />{" "}
+                  {server.dns_records.some((record) => record.type === "CNAME")
+                    ? "Rename"
+                    : "Add custom address"}
+                </Button>
+              )}
             </div>
-            {server.cloudflare_available && (
-              <Button size="sm" variant="outline" onClick={() => {
-                setRenameValue(server.dns_records.find((record) => record.type === "CNAME")?.name.split(".")[0] ?? server.slug)
-                setRenameOpen(true)
-              }}>
-                <Pencil className="size-3.5" /> {server.dns_records.some((record) => record.type === "CNAME") ? "Rename" : "Add custom address"}
-              </Button>
+            {/* Why there is no custom Cloudflare address */}
+            {!server.dns_records.some((record) => record.type === "CNAME") && (
+              <div className="flex items-center justify-between gap-4 border-t border-border px-4 py-2.5">
+                <p className="flex items-start gap-2 text-[11px]">
+                  {server.cloudflare_available && server.dns_error && (
+                    <TriangleAlert className="mt-px size-3.5 shrink-0 text-amber-500" />
+                  )}
+                  <span>
+                    <span className="font-medium text-foreground">
+                      No custom address:{" "}
+                    </span>
+                    {!server.cloudflare_available
+                      ? "Cloudflare isn't set up, so players use the Playit address."
+                      : (server.dns_error ??
+                        "This server has no Cloudflare DNS record yet.")}
+                  </span>
+                </p>
+                {server.cloudflare_available ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRetryDns}
+                    disabled={renaming}
+                  >
+                    {renaming && <Loader2 className="size-3.5 animate-spin" />}
+                    {server.dns_error ? "Retry" : "Create"}
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="ghost" asChild>
+                    <Link href="/?settings=1">Set up Cloudflare</Link>
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         ) : (
-          <div className="mb-6 border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
-            No Playit tunnel address is available for this server.
+          <div className="mb-6 flex items-center justify-between gap-4 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-muted-foreground">
+            <p className="flex items-start gap-2">
+              <TriangleAlert className="mt-px size-4 shrink-0 text-amber-500" />
+              <span>
+                <span className="block font-medium text-foreground">
+                  No public address
+                </span>
+                {server.progress?.action === "provision" &&
+                server.progress.status === "in_progress"
+                  ? `Still being set up: ${server.progress.step ?? "working"} (${server.progress.percent}%)`
+                  : !server.playit_configured
+                    ? "Playit isn't set up, so CSCM can't create a tunnel. Add your Playit account in Connection settings."
+                    : (server.tunnel_error ??
+                      "This server has no Playit tunnel. If it was just created, the tunnel may still be in progress.")}
+                <span className="mt-1 block text-[11px]">
+                  Players on your network can still join at{" "}
+                  {typeof window !== "undefined"
+                    ? window.location.hostname
+                    : "—"}
+                  :{server.port}.
+                </span>
+              </span>
+            </p>
+            <div className="flex shrink-0 gap-2">
+              {server.playit_configured && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSetupTunnel}
+                  disabled={tunneling}
+                >
+                  {tunneling && <Loader2 className="size-3.5 animate-spin" />}
+                  {tunneling ? "Creating tunnel…" : "Retry Playit tunnel"}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant={server.playit_configured ? "ghost" : "outline"}
+                asChild
+              >
+                <Link href="/?settings=1">Connection settings</Link>
+              </Button>
+            </div>
           </div>
         )}
 
@@ -799,10 +937,10 @@ export default function ServerDetailPage() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             This stops, removes, and rebuilds the container from the
-            server&apos;s current settings — no settings will change, and
-            world data isn&apos;t touched since it lives outside the
-            container. This is mainly useful after a backend update that an
-            existing container needs to pick up.
+            server&apos;s current settings — no settings will change, and world
+            data isn&apos;t touched since it lives outside the container. This
+            is mainly useful after a backend update that an existing container
+            needs to pick up.
           </p>
           <label className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5 text-sm">
             <span>
@@ -855,12 +993,25 @@ export default function ServerDetailPage() {
       {/* Custom Cloudflare address */}
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Rename custom address</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Rename custom address</DialogTitle>
+          </DialogHeader>
           <form onSubmit={handleRenameSubdomain} className="space-y-4 pt-1">
             <Label htmlFor="custom-subdomain">Subdomain</Label>
-            <Input id="custom-subdomain" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} disabled={renaming} />
+            <Input
+              id="custom-subdomain"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              disabled={renaming}
+            />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>Cancel</Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRenameOpen(false)}
+              >
+                Cancel
+              </Button>
               <Button type="submit" disabled={renaming || !renameValue.trim()}>
                 {renaming && <Loader2 className="size-3.5 animate-spin" />}
                 Save
@@ -997,7 +1148,9 @@ export default function ServerDetailPage() {
                 )}
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-memmax">
-                    {server.type === "bedrock" ? "Memory Limit (GB)" : "Max (GB)"}
+                    {server.type === "bedrock"
+                      ? "Memory Limit (GB)"
+                      : "Max (GB)"}
                   </Label>
                   <Input
                     id="edit-memmax"

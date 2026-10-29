@@ -12,12 +12,7 @@ export interface DnsRecord {
 }
 
 export type RuntimeStatus =
-  | "not_created"
-  | "stopped"
-  | "starting"
-  | "healthy"
-  | "unhealthy"
-  | "running"
+  "not_created" | "stopped" | "starting" | "healthy" | "unhealthy" | "running"
 
 export interface Server {
   id: number
@@ -35,7 +30,21 @@ export interface Server {
   tunnels: Tunnel[]
   dns_records: DnsRecord[]
   cloudflare_available?: boolean
+  playit_configured?: boolean
   local_only?: boolean
+  /** why the last Playit tunnel / Cloudflare DNS attempt failed */
+  tunnel_error?: string | null
+  dns_error?: string | null
+  /** running (or just failed) creation / deletion */
+  progress?: ServerProgress | null
+}
+
+export interface ServerProgress {
+  action: "provision" | "delete"
+  status: "in_progress" | "failed"
+  percent: number
+  step: string | null
+  message: string | null
 }
 
 export interface ServerStats {

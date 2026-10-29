@@ -20,6 +20,7 @@ Deprovisioning sequence:
 """
 
 import asyncio
+import os
 import re
 import secrets
 import shutil
@@ -31,7 +32,7 @@ import docker_manager
 import progress_store
 from docker_manager import BEDROCK_TYPES, SERVER_TYPES, server_data_dir
 from db import get_db
-from playit_manager import create_tunnel, delete_tunnel, lookup_minecraft_srv_port
+from playit_manager import create_tunnel, delete_tunnel, last_error, lookup_minecraft_srv_port
 from cloudflare_manager import cloudflare_enabled, create_dns_record, create_srv_record, delete_dns_record_by_id
 from logger import get_logger
 
@@ -55,9 +56,38 @@ def _split_bedrock_address(tunnel_address: str) -> tuple[str, int | None]:
     return tunnel_address, None
 
 
+def _set_connection_error(server_id: int, column: str, reason: str | None) -> None:
+    """Remember why the tunnel or DNS step failed, or clear it (reason=None)."""
+    assert column in ("tunnel_error", "dns_error")
+    try:
+        with get_db() as conn:
+            conn.execute(f"UPDATE servers SET {column} = ? WHERE id = ?", (reason, server_id))
+    except sqlite3.Error as exc:
+        log.warning("Could not save %s for db_id=%d: %s", column, server_id, exc)
+
+
+def active_progress(server_id: int) -> dict | None:
+    """Creation/deletion progress to show on the server, if one is running or just failed."""
+    prog = progress_store.get(server_id)
+    if prog["action"] and prog["status"] in ("in_progress", "failed"):
+        return {k: prog[k] for k in ("action", "status", "percent", "step", "message")}
+    return None
+
+
+def playit_configured() -> bool:
+    return bool(os.getenv("PLAYIT_EMAIL", "").strip() and os.getenv("PLAYIT_PASSWORD", ""))
+
+
 def _create_optional_dns(server_id: int, subdomain: str, tunnel_address: str,
                          external_port: int | None, is_bedrock: bool) -> tuple[str, str | None]:
     """Return the public address and any DNS warning. PlayIT always works alone."""
+    address, warning = _create_dns_records(server_id, subdomain, tunnel_address, external_port, is_bedrock)
+    _set_connection_error(server_id, "dns_error", warning)
+    return address, warning
+
+
+def _create_dns_records(server_id: int, subdomain: str, tunnel_address: str,
+                        external_port: int | None, is_bedrock: bool) -> tuple[str, str | None]:
     if not cloudflare_enabled():
         return tunnel_address, None
     if not is_bedrock and not external_port:
@@ -200,11 +230,14 @@ def _provision_resources(
         protocol="bedrock" if is_bedrock else "java",
     ))
     if not tunnel_address:
-        log.error("PlayIT tunnel creation failed for server db_id=%d", db_server_id)
+        reason = last_error() or "PlayIT tunnel creation failed"
+        log.error("PlayIT tunnel creation failed for server db_id=%d: %s", db_server_id, reason)
+        _set_connection_error(db_server_id, "tunnel_error", reason)
         progress_store.update(db_server_id, action="provision", percent=35,
                               step="PlayIT tunnel creation failed", status="failed",
-                              message="Could not create PlayIT tunnel")
-        return {"success": False, "message": "PlayIT tunnel creation failed", "server_id": db_server_id}
+                              message=reason)
+        return {"success": False, "message": reason, "server_id": db_server_id}
+    _set_connection_error(db_server_id, "tunnel_error", None)
 
     if is_bedrock:
         # No SRV-based port discovery for Bedrock — playit.gg embeds the
@@ -370,10 +403,12 @@ def list_servers() -> list[dict]:
     try:
         with get_db() as conn:
             servers = conn.execute(
-                "SELECT id, name, slug, type, version, loader_version, serverport, mem_min_gb, mem_max_gb, status, local_only, createdat"
+                "SELECT id, name, slug, type, version, loader_version, serverport, mem_min_gb, mem_max_gb, status, local_only,"
+                " tunnel_error, dns_error, createdat"
                 " FROM servers ORDER BY id"
             ).fetchall()
             cf_available = cloudflare_enabled()
+            playit_ready = playit_configured()
             result = []
             for s in servers:
                 tunnels = conn.execute(
@@ -398,6 +433,10 @@ def list_servers() -> list[dict]:
                     "status": s["status"],
                     "local_only": bool(s["local_only"]),
                     "cloudflare_available": cf_available,
+                    "playit_configured": playit_ready,
+                    "tunnel_error": s["tunnel_error"],
+                    "dns_error": s["dns_error"],
+                    "progress": active_progress(s["id"]),
                     "runtime_status": docker_manager.runtime_status(s["id"]),
                     "created_at": s["createdat"],
                     "tunnels": [
@@ -452,7 +491,13 @@ def create_server_tunnel(db_server_id: int, region: str | None = None, subscript
         protocol="bedrock" if is_bedrock else "java",
     ))
     if not tunnel_address:
-        return {"success": False, "message": "PlayIT tunnel creation failed"}
+        reason = last_error() or "PlayIT tunnel creation failed"
+        _set_connection_error(db_server_id, "tunnel_error", reason)
+        return {"success": False, "message": reason}
+    _set_connection_error(db_server_id, "tunnel_error", None)
+    # a retry that works replaces the "setup failed" notice from provisioning
+    if progress_store.get(db_server_id)["status"] == "failed":
+        progress_store.clear(db_server_id)
 
     if is_bedrock:
         tunnel_address, external_port = _split_bedrock_address(tunnel_address)
@@ -522,12 +567,25 @@ def rename_server_subdomain(db_server_id: int, new_subdomain: str) -> dict:
            for row in old_dns):
         return {"success": True, "message": "Cloudflare subdomain is already set"}
 
-    address, warning = _create_optional_dns(
-        db_server_id, new_subdomain, tunnel["tunnel_address"],
-        tunnel["external_port"], server["type"] in BEDROCK_TYPES,
+    is_bedrock = server["type"] in BEDROCK_TYPES
+    external_port = tunnel["external_port"]
+    if not is_bedrock and not external_port:
+        # the SRV lookup can fail right after the tunnel is created; try again
+        external_port = lookup_minecraft_srv_port(tunnel["tunnel_address"])
+        if external_port:
+            with get_db() as conn:
+                conn.execute("UPDATE playit_tunnels SET external_port = ? WHERE server_id = ?",
+                             (external_port, db_server_id))
+
+    address, warning = _create_dns_records(
+        db_server_id, new_subdomain, tunnel["tunnel_address"], external_port, is_bedrock,
     )
     if warning:
+        # a failed rename leaves the old, working address in place
+        if not old_dns:
+            _set_connection_error(db_server_id, "dns_error", warning)
         return {"success": False, "message": warning}
+    _set_connection_error(db_server_id, "dns_error", None)
     cleanup_failed = False
     for row in old_dns:
         if row["cloudflare_record_id"] and not delete_dns_record_by_id(row["cloudflare_record_id"]):
