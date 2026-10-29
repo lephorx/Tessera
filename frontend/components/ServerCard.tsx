@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback } from "react"
 import Link from "next/link"
 import {
   Loader2,
@@ -11,6 +11,7 @@ import {
   Users,
   Network,
   TriangleAlert,
+  Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -23,7 +24,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import type { Server, ServerStats } from "@/lib/types"
+import type { Server, ServerProgress, ServerStats } from "@/lib/types"
+import { useSmoothPercent } from "@/hooks/useSmoothPercent"
 import { api } from "@/lib/api"
 import { parsePlayers, serverConnectAddress } from "@/lib/utils"
 
@@ -37,24 +39,40 @@ interface Props {
 
 type Action = "stop" | "kill" | null
 
-// The backend reports few, uneven steps (deleting sits at "Stopping
-// container" for most of the time), so the bar creeps towards 95% on its own
-// between polls, never drops below the real value, and only runs to 100%
-// once the work is really done.
-function useSmoothPercent(real: number, active: boolean) {
-  const [shown, setShown] = useState(real)
-  useEffect(() => {
-    if (!active) return
-    const id = setInterval(() => {
-      setShown((prev) =>
-        real >= 100
-          ? Math.min(100, prev + Math.max(5, (100 - prev) * 0.4))
-          : Math.max(real, prev + (95 - prev) * 0.008)
-      )
-    }, 200)
-    return () => clearInterval(id)
-  }, [real, active])
-  return Math.round(active ? Math.max(shown, real) : real)
+// Covers the whole card while the server is being created or deleted, like
+// the old dashboard did; the card underneath can't be used meanwhile.
+function OperationOverlay({
+  progress,
+  percent,
+}: {
+  progress: ServerProgress
+  percent: number
+}) {
+  const isDelete = progress.action === "delete"
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-card/90 px-5 text-center backdrop-blur-[1px]">
+      <div className="flex items-center gap-2">
+        {isDelete ? (
+          <Trash2 className="size-4 text-destructive" />
+        ) : (
+          <Loader2 className="size-4 animate-spin text-primary" />
+        )}
+        <span className="text-sm font-medium">
+          {isDelete ? "Deleting server…" : "Creating server…"}
+        </span>
+      </div>
+      {progress.step && (
+        <p className="text-xs text-muted-foreground">{progress.step}</p>
+      )}
+      <Progress
+        value={percent}
+        className={`h-1.5 w-full max-w-[180px] ${isDelete ? "[&>div]:bg-destructive" : ""}`}
+      />
+      <span className="text-[11px] text-muted-foreground tabular-nums">
+        {percent}%
+      </span>
+    </div>
+  )
 }
 
 export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
@@ -67,6 +85,9 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
   const progress = server.progress
   const busy = progress?.status === "in_progress"
   const deleting = busy && progress?.action === "delete"
+  // creation and deletion cover the card; a tunnel retry only shows a line
+  const overlay =
+    busy && (progress?.action === "delete" || progress?.action === "provision")
   const percent = useSmoothPercent(progress?.percent ?? 0, busy)
 
   const statusDot = isRunning ? "bg-emerald-500" : "bg-zinc-400"
@@ -102,8 +123,12 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
   return (
     <>
       <div
-        className={`flex flex-col gap-4 border border-border bg-card p-5 ${deleting ? "opacity-60" : ""}`}
+        className="relative flex flex-col gap-4 border border-border bg-card p-5"
+        inert={overlay || undefined}
       >
+        {overlay && progress && (
+          <OperationOverlay progress={progress} percent={percent} />
+        )}
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -144,8 +169,8 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
           </span>
         </div>
 
-        {/* Creation / deletion in progress, or why it failed */}
-        {progress && (
+        {/* Tunnel retry in progress, or why something failed */}
+        {progress && !overlay && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2 text-xs">
               <span
@@ -162,9 +187,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
                 >
                   {progress.status === "failed"
                     ? `${progress.action === "delete" ? "Deletion" : progress.action === "tunnel" ? "Tunnel" : "Setup"} failed: ${progress.message ?? progress.step}`
-                    : deleting
-                      ? `Deleting: ${progress.step ?? "working"}`
-                      : (progress.step ?? "Setting up…")}
+                    : (progress.step ?? "Setting up…")}
                 </span>
               </span>
               {busy && (

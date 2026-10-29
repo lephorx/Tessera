@@ -16,6 +16,7 @@ import {
   Settings2,
   RefreshCw,
   TriangleAlert,
+  Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -48,6 +49,7 @@ import {
   normalizeServer,
   serverConnectAddress,
 } from "@/lib/utils"
+import { useSmoothPercent } from "@/hooks/useSmoothPercent"
 import type { Server, ServerProgress, ServerStats as Stats } from "@/lib/types"
 
 const POLL_INTERVAL = 5000
@@ -182,7 +184,10 @@ export default function ServerDetailPage() {
   const isRunning = stats?.running ?? false
 
   // Follow tunnel creation (and the setup of a new server) step by step.
-  const watching = tunneling || server?.progress?.status === "in_progress"
+  const watching =
+    tunneling ||
+    liveProgress?.status === "in_progress" ||
+    server?.progress?.status === "in_progress"
   useEffect(() => {
     if (!watching) return
     const id = setInterval(async () => {
@@ -192,6 +197,17 @@ export default function ServerDetailPage() {
           setLiveProgress(p)
           return
         }
+        if (p?.action === "delete" && p.status !== "failed") {
+          // gone: the dashboard confirms the deletion
+          sessionStorage.setItem(
+            DELETING_KEY,
+            JSON.stringify({ id: serverId, name: serverName.current })
+          )
+          window.location.href = "/"
+          return
+        }
+        if (p?.action === "delete" && p.status === "failed")
+          toast.error(p.message ?? "The server could not be deleted")
         setLiveProgress(null)
         setTunneling(false)
         if (p?.action === "tunnel" && p.status === "completed")
@@ -207,6 +223,16 @@ export default function ServerDetailPage() {
     }, 1500)
     return () => clearInterval(id)
   }, [watching, serverId])
+
+  // progress for the full-page overlay (hooks must run before early returns)
+  const pageProgress = liveProgress ?? server?.progress ?? null
+  const pageBusy =
+    pageProgress?.status === "in_progress" &&
+    (pageProgress.action === "delete" || pageProgress.action === "provision")
+  const overlayPercent = useSmoothPercent(pageProgress?.percent ?? 0, pageBusy)
+  // remembered for the dashboard's "was deleted" message
+  const serverName = useRef("The server")
+  if (server?.name) serverName.current = server.name
 
   async function execAction(action: "start" | "stop" | "restart" | "kill") {
     setLoadingAction(action)
@@ -237,15 +263,18 @@ export default function ServerDetailPage() {
 
   async function handleDelete() {
     setDeleteOpen(false)
+    // the deletion overlay takes over right away and follows the progress
+    setLiveProgress({
+      action: "delete",
+      status: "in_progress",
+      percent: 2,
+      step: "Deletion queued",
+      message: null,
+    })
     try {
       await api.servers.delete(serverId)
-      // lets the dashboard confirm the deletion even if it finishes first
-      sessionStorage.setItem(
-        DELETING_KEY,
-        JSON.stringify({ id: serverId, name: server?.name ?? "The server" })
-      )
-      window.location.href = "/"
     } catch (err) {
+      setLiveProgress(null)
       toast.error(
         err instanceof Error ? err.message : "Failed to delete server"
       )
@@ -511,11 +540,66 @@ export default function ServerDetailPage() {
       </div>
     )
 
+  const isDeleting = pageBusy && pageProgress?.action === "delete"
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <TopNav user={user} onLogout={logout} />
 
-      <main className="mx-auto w-full max-w-screen-xl flex-1 px-6 py-8">
+      {/* Deletion / creation in progress: covers the page and can't be closed */}
+      {pageBusy && pageProgress && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label={
+            isDeleting
+              ? "Server deletion in progress"
+              : "Server creation in progress"
+          }
+          className={`fixed inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-sm ${
+            isDeleting ? "bg-destructive/25" : "bg-primary/15"
+          }`}
+        >
+          <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-center shadow-xl">
+            <div className="flex items-center justify-center gap-2">
+              {isDeleting ? (
+                <Trash2 className="size-5 text-destructive" />
+              ) : (
+                <Loader2 className="size-5 animate-spin text-primary" />
+              )}
+              <h2 className="text-base font-semibold">
+                {isDeleting
+                  ? "Server deletion in progress"
+                  : "Server creation in progress"}
+              </h2>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">{server.name}</p>
+            <Progress
+              value={overlayPercent}
+              className={`mt-5 h-1.5 ${isDeleting ? "[&>div]:bg-destructive" : ""}`}
+            />
+            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Loader2 className="size-3 shrink-0 animate-spin" />
+                <span className="truncate">
+                  {pageProgress.step ?? "Working…"}
+                </span>
+              </span>
+              <span className="shrink-0 tabular-nums">{overlayPercent}%</span>
+            </div>
+            <p className="mt-4 text-[11px] text-muted-foreground">
+              {isDeleting
+                ? "You'll be taken back to your servers when it's done."
+                : "This page unlocks when the server is ready."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <main
+        className="mx-auto w-full max-w-screen-xl flex-1 px-6 py-8"
+        inert={pageBusy || undefined}
+      >
         {/* Breadcrumb + header */}
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
