@@ -62,6 +62,53 @@ def get_server_types():
 
 
 # ---------------------------------------------------------------------------
+# GET /api/servers/ports?type=java|bedrock
+# Ports in use by any server (not just the caller's) plus the next free one,
+# counting up from the edition's default port.
+# ---------------------------------------------------------------------------
+# Ports reserved by the system, CSCM itself, or common services
+RESERVED_PORTS = {3000, 3001, 4000, 5000, 5001, 6000, 8000, 8080, 8443, 8888, 9000, 9090}
+
+
+def _used_ports() -> set[int]:
+    with get_db() as conn:
+        used = {r["serverport"] for r in conn.execute("SELECT serverport FROM servers")}
+    # Host ports published by other containers on this Docker host
+    try:
+        for container in docker_manager._get_client().containers.list(all=True):
+            for bindings in (container.ports or {}).values():
+                for binding in bindings or []:
+                    if str(binding.get("HostPort", "")).isdigit():
+                        used.add(int(binding["HostPort"]))
+    except Exception as exc:
+        log.debug("Could not list published container ports: %s", exc)
+    return used
+
+
+def free_port(is_bedrock: bool, used: set[int] | None = None) -> int | None:
+    used = _used_ports() if used is None else used
+    start = 19132 if is_bedrock else 25565
+    for port in [*range(start, 65536), *range(1024, start)]:
+        if port not in used and port not in RESERVED_PORTS:
+            return port
+    return None
+
+
+@servers_bp.route("/servers/ports", methods=["GET"])
+def get_ports():
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    used = _used_ports()
+    is_bedrock = request.args.get("type", "java").lower() == "bedrock"
+    return jsonify({
+        "free_port": free_port(is_bedrock, used),
+        "used_ports": sorted(used),
+        "reserved_ports": sorted(RESERVED_PORTS),
+    })
+
+
+# ---------------------------------------------------------------------------
 # GET /api/servers
 # ---------------------------------------------------------------------------
 @servers_bp.route("/servers", methods=["GET"])
@@ -161,7 +208,8 @@ def create_server():
     is_bedrock = server_type == "bedrock"
 
     version = body.get("version") or ("LATEST" if is_bedrock else "1.21.4")
-    port    = body.get("port")   or (19132 if is_bedrock else 25565)
+    # No port given: take the next free one
+    port    = body.get("port")   or free_port(is_bedrock)
     mem_min = body.get("mem_min", 2)
     mem_max = body.get("mem_max", 4)
     loader_version   = body.get("loader_version")  # None = image default

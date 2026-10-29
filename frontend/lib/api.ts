@@ -119,6 +119,13 @@ export const api = {
   },
   servers: {
     list: () => apiCall("/servers"),
+    /** Ports in use by any server, plus the next free one for the edition */
+    ports: (type: "java" | "bedrock") =>
+      apiCall(`/servers/ports?type=${type}`) as Promise<{
+        free_port: number | null
+        used_ports: number[]
+        reserved_ports: number[]
+      }>,
     get: (id: number) => apiCall(`/servers/${id}`),
     create: (data: CreateServerPayload) =>
       apiCall("/servers", { method: "POST", body: JSON.stringify(data) }),

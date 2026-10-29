@@ -263,6 +263,25 @@ paths:
       responses:
         "200": { description: OK }
 
+  /api/servers/ports:
+    get:
+      tags: [Servers]
+      summary: Ports in use by any server, and the next free one
+      parameters:
+        - in: query
+          name: type
+          schema: { type: string, enum: [java, bedrock], default: java }
+      responses:
+        "200":
+          description: Port usage
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  free_port: { type: integer, nullable: true }
+                  used_ports: { type: array, items: { type: integer } }
+                  reserved_ports: { type: array, items: { type: integer } }
   /api/servers:
     get:
       tags: [Servers]
@@ -312,8 +331,9 @@ paths:
                   type: integer
                   minimum: 1024
                   maximum: 65535
-                  default: 25565
-                  description: Defaults to 19132 when type is "bedrock".
+                  description: >
+                    Omit to take the next free port, counting up from 25565
+                    (19132 for "bedrock"). See GET /api/servers/ports.
                 mem_min: { type: integer, default: 2 }
                 mem_max: { type: integer, default: 4 }
                 subscription: { type: string, enum: [premium, free] }

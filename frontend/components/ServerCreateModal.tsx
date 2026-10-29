@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { api } from "@/lib/api"
-import type { CreateServerPayload, Server } from "@/lib/types"
+import type { CreateServerPayload } from "@/lib/types"
 import type { CreationTask } from "@/hooks/useServerCreation"
 import { VersionPicker } from "@/components/VersionPicker"
 import {
@@ -61,9 +61,7 @@ const BLOCKED_PORTS = new Set([
 
 const JAVA_TYPES = ["paper", "forge", "fabric", "vanilla", "purpur"]
 const DEFAULT_JAVA_VERSION = "1.21.4"
-const DEFAULT_JAVA_PORT = "25565"
 const DEFAULT_BEDROCK_VERSION = "LATEST"
-const DEFAULT_BEDROCK_PORT = "19132"
 
 interface Props {
   open: boolean
@@ -76,12 +74,7 @@ interface Props {
 }
 
 type PortStatus =
-  | "idle"
-  | "checking"
-  | "available"
-  | "taken"
-  | "reserved"
-  | "invalid"
+  "idle" | "checking" | "available" | "taken" | "reserved" | "invalid"
 
 export function ServerCreateModal({
   open,
@@ -98,12 +91,15 @@ export function ServerCreateModal({
   const [submitting, setSubmitting] = useState(false)
   const [usedPorts, setUsedPorts] = useState<Set<number>>(new Set())
   const [portStatus, setPortStatus] = useState<PortStatus>("idle")
+  // The port is picked automatically until the user clicks "Change"
+  const [portCustom, setPortCustom] = useState(false)
+  const [portRefresh, setPortRefresh] = useState(0)
 
   const [form, setForm] = useState({
     name: "",
     type: "paper",
     version: DEFAULT_JAVA_VERSION,
-    port: DEFAULT_JAVA_PORT,
+    port: "",
     mem_min: "2",
     mem_max: "4",
     loader_version: "",
@@ -120,7 +116,7 @@ export function ServerCreateModal({
       name: "",
       type: "paper",
       version: DEFAULT_JAVA_VERSION,
-      port: DEFAULT_JAVA_PORT,
+      port: "",
       mem_min: "2",
       mem_max: "4",
       loader_version: "",
@@ -128,12 +124,14 @@ export function ServerCreateModal({
     })
     setErrors({})
     setPortStatus("idle")
+    setPortCustom(false)
+    setPortRefresh((n) => n + 1)
     setProps([])
     setShowProps(false)
   }
 
-  // Bedrock has its own defaults (no manifest-based version, UDP port 19132,
-  // no JVM heap). Swap version/port when switching type, but only if the
+  // Bedrock has its own defaults (no manifest-based version, no JVM heap).
+  // Swap the version when switching type, but only if the
   // field still holds the *other* type's default — never clobber a value
   // the user deliberately customized.
   function handleTypeChange(newType: string) {
@@ -144,12 +142,10 @@ export function ServerCreateModal({
       if (isBedrock && !wasBedrock) {
         if (prev.version === DEFAULT_JAVA_VERSION)
           next.version = DEFAULT_BEDROCK_VERSION
-        if (prev.port === DEFAULT_JAVA_PORT) next.port = DEFAULT_BEDROCK_PORT
         next.loader_version = ""
       } else if (!isBedrock && wasBedrock) {
         if (prev.version === DEFAULT_BEDROCK_VERSION)
           next.version = DEFAULT_JAVA_VERSION
-        if (prev.port === DEFAULT_BEDROCK_PORT) next.port = DEFAULT_JAVA_PORT
       }
       return next
     })
@@ -178,15 +174,27 @@ export function ServerCreateModal({
         else if (Array.isArray(res)) setServerTypes(res)
       })
       .catch(() => {})
+  }, [open])
 
+  // Ports used by every server (not only ours), and the next free one for
+  // this edition, which fills the field until the user picks their own
+  const edition = form.type === "bedrock" ? "bedrock" : "java"
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
     api.servers
-      .list()
+      .ports(edition)
       .then((res) => {
-        const list: Server[] = res?.servers ?? res?.data ?? res ?? []
-        setUsedPorts(new Set(list.map((s) => s.port)))
+        if (cancelled) return
+        setUsedPorts(new Set(res.used_ports))
+        if (!portCustom && res.free_port)
+          setForm((prev) => ({ ...prev, port: String(res.free_port) }))
       })
       .catch(() => {})
-  }, [open])
+    return () => {
+      cancelled = true
+    }
+  }, [open, edition, portCustom, portRefresh])
 
   // Load default properties, filtered to whichever edition is currently
   // selected — Java and Bedrock server.properties keys are almost entirely
@@ -198,7 +206,9 @@ export function ServerCreateModal({
     if (!open) return
     const isBedrock = form.type === "bedrock"
     const allowedKeys = isBedrock ? BEDROCK_PROPERTY_KEYS : JAVA_PROPERTY_KEYS
-    const otherEditionKeys = isBedrock ? JAVA_PROPERTY_KEYS : BEDROCK_PROPERTY_KEYS
+    const otherEditionKeys = isBedrock
+      ? JAVA_PROPERTY_KEYS
+      : BEDROCK_PROPERTY_KEYS
 
     api.defaults
       .getProperties()
@@ -209,7 +219,9 @@ export function ServerCreateModal({
             // Drop keys known to belong to the *other* edition; keep
             // matching keys and anything unrecognized (e.g. a mod-specific
             // key we don't have in our reference list).
-            .filter(([key]) => !otherEditionKeys.has(key) || allowedKeys.has(key))
+            .filter(
+              ([key]) => !otherEditionKeys.has(key) || allowedKeys.has(key)
+            )
             .map(([key, value]) => ({ key, value: String(value) }))
         )
       })
@@ -252,7 +264,9 @@ export function ServerCreateModal({
     if (!form.name.trim()) next.name = "Server name is required"
     if (!form.version.trim()) next.version = "Version is required"
     const port = parseInt(form.port, 10)
-    if (isNaN(port) || port < PORT_MIN || port > PORT_MAX)
+    // automatic with no suggestion yet: the backend picks the port
+    const backendPicks = !portCustom && !form.port
+    if (!backendPicks && (isNaN(port) || port < PORT_MIN || port > PORT_MAX))
       next.port = `Port must be between ${PORT_MIN} and ${PORT_MAX}`
     if (BLOCKED_PORTS.has(port))
       next.port = "This port is reserved by the system"
@@ -290,7 +304,7 @@ export function ServerCreateModal({
         name: form.name.trim(),
         type: form.type,
         version: form.version.trim(),
-        port: parseInt(form.port, 10),
+        ...(form.port ? { port: parseInt(form.port, 10) } : {}),
         // The Min RAM field is hidden for Bedrock (no JVM heap), but the
         // backend still enforces mem_max >= mem_min unconditionally — send
         // 1 so a leftover/hidden mem_min never fails that check.
@@ -493,20 +507,58 @@ export function ServerCreateModal({
                   {form.type === "bedrock" ? " (UDP)" : ""}
                 </span>
               </div>
-              <Input
-                id="srv-port"
-                type="number"
-                min={PORT_MIN}
-                max={PORT_MAX}
-                value={form.port}
-                onChange={(e) => handleChange("port", e.target.value)}
-                disabled={submitting}
-                aria-invalid={!!errors.port || portStatus === "taken"}
-              />
+              {!portCustom ? (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm">
+                      {form.port || (
+                        <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Picked automatically, the next free port
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={submitting}
+                    onClick={() => setPortCustom(true)}
+                  >
+                    Change
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    id="srv-port"
+                    autoFocus
+                    type="number"
+                    min={PORT_MIN}
+                    max={PORT_MAX}
+                    value={form.port}
+                    onChange={(e) => handleChange("port", e.target.value)}
+                    disabled={submitting}
+                    aria-invalid={!!errors.port || portStatus === "taken"}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={submitting}
+                    onClick={() => {
+                      setPortCustom(false)
+                      setErrors((prev) => ({ ...prev, port: undefined }))
+                    }}
+                  >
+                    Automatic
+                  </Button>
+                </div>
+              )}
               {/* Port status feedback */}
               {errors.port ? (
                 <p className="text-xs text-destructive">{errors.port}</p>
-              ) : portOutOfRange ? (
+              ) : !portCustom ? null : portOutOfRange ? (
                 <p className="flex items-center gap-1 text-xs text-destructive">
                   <XCircle className="size-3" />
                   Must be between {PORT_MIN} and {PORT_MAX}
@@ -582,8 +634,8 @@ export function ServerCreateModal({
                 <p className="text-sm font-medium">Local Only</p>
                 <p className="text-xs text-muted-foreground">
                   Skip the public tunnel and DNS setup — the server is only
-                  reachable on your local network, via this machine&apos;s
-                  own IP address and the port above.
+                  reachable on your local network, via this machine&apos;s own
+                  IP address and the port above.
                 </p>
                 {!publicAvailable && (
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -615,15 +667,15 @@ export function ServerCreateModal({
                     aria-invalid={!!errors.mem_min}
                   />
                   {errors.mem_min && (
-                    <p className="text-xs text-destructive">
-                      {errors.mem_min}
-                    </p>
+                    <p className="text-xs text-destructive">{errors.mem_min}</p>
                   )}
                 </div>
               )}
               <div className="space-y-1.5">
                 <Label htmlFor="srv-memmax">
-                  {form.type === "bedrock" ? "Memory Limit (GB)" : "Max RAM (GB)"}
+                  {form.type === "bedrock"
+                    ? "Memory Limit (GB)"
+                    : "Max RAM (GB)"}
                 </Label>
                 <Input
                   id="srv-memmax"
