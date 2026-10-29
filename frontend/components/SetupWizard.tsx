@@ -14,9 +14,10 @@ import { cn } from "@/lib/utils"
 const PLAYIT_AGENT_WIZARD =
   "https://playit.gg/account/setup/wizard/new-account/docker/docker-name"
 const REGIONS = [
-  "Germany", "United Kingdom", "Sweden", "Poland", "Spain", "Seattle",
-  "Los Angeles", "Denver", "Dallas", "Chicago", "New York", "Miami",
-  "Singapore", "Japan", "Australia", "Sao Paulo", "Chile", "India",
+  "Germany", "United Kingdom", "Sweden", "Poland", "Romania", "Europe",
+  "Atlanta", "California", "Chicago", "Dallas", "Denver", "Miami",
+  "New York", "Seattle", "North America", "India", "Japan", "Asia",
+  "Brazil", "Chile", "Australia",
 ]
 
 type Step = "mode" | "playit" | "agent" | "cloudflare"

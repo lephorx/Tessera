@@ -44,8 +44,17 @@ def _subscription() -> str:
 
 
 def _region() -> str:
-    # Seattle, Los Angeles, Denver, Dallas, Chicago, New York, Miami, Germany, United Kingdom, ...
+    # Names as listed on playit's "Playit Network" tab, e.g. Germany, Chicago, Japan
     return _setting("PLAYIT_REGION", "Germany")
+
+
+# Region names saved before playit's new region list, mapped to the new names
+LEGACY_REGIONS = {
+    "Los Angeles": "California",
+    "Sao Paulo": "Brazil",
+    "Spain": "Europe",
+    "Singapore": "Asia",
+}
 
 
 def _agent() -> str:
@@ -157,25 +166,28 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
             await page.click('button[type="submit"]')
             await asyncio.sleep(1)
 
-            # Select network (Premium or Free)
-            log.debug("Selecting %s network", selected_subscription.upper())
-            if selected_subscription == "free":
-                await page.click('button.zrkgene:has-text("Free Network")')
-            else:
-                await page.click('button.zrkgene:has-text("Premium Network")')
+            # Select region. The step opens on the "Gateways" tab (premium
+            # dedicated gateways); the shared regions live under the
+            # "Playit Network" tab, so switch to it first.
+            log.debug("Switching to the Playit Network tab")
+            try:
+                await page.click('button:has-text("Playit Network")', timeout=TIMEOUT)
+            except PlaywrightTimeoutError:
+                log.warning("Playit Network tab not found; trying text search")
+                await _click_by_text(page, "Playit Network")
             await asyncio.sleep(1)
 
-            # Select region
+            # Only premium accounts can pick a region; free tunnels use the
+            # global anycast entry.
+            if selected_subscription == "free":
+                selected_region = "Global Anycast"
+            else:
+                selected_region = LEGACY_REGIONS.get(selected_region, selected_region)
             log.debug("Selecting region: %s", selected_region)
-            await page.evaluate(f"""
-                () => {{
-                    const regions = Array.from(document.querySelectorAll('div._15pr4g9g'));
-                    const target = regions.find(el => el.textContent.includes('{selected_region}'));
-                    if (target) target.click();
-                }}
-            """)
+            if not await _select_region(page, selected_region):
+                log.warning("Region '%s' not found; continuing with playit's default", selected_region)
             await asyncio.sleep(1)
-            await page.click('button.maeflab')
+            await _click_next(page)
             await asyncio.sleep(1)
 
             # Select agent
@@ -185,7 +197,7 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
 
             # Click Next after agent selection
             log.debug("Clicking Next after agent selection")
-            await page.click('button.maeflab')
+            await _click_next(page)
             await asyncio.sleep(1)
 
             # Set local port
@@ -231,6 +243,49 @@ async def create_tunnel(tunnel_name: str, tunnel_port: int | str, region: str | 
     except Exception as exc:
         log.exception("Unexpected error during tunnel creation: %s", exc)
         return None
+
+
+async def _select_region(page, region: str) -> bool:
+    """Click a region row on the Playit Network tab.
+
+    Rows look like ``<div class="_198gff2">Chicago, Illinois <span
+    class="_198gff6">North America</span></div>``. The row's own text (the
+    part before the span) is matched, so "Chicago" picks "Chicago, Illinois"
+    and "Europe" doesn't match every row whose continent label is Europe.
+    """
+    return await page.evaluate(
+        """
+        (region) => {
+            const want = region.trim().toLowerCase();
+            const label = el => Array.from(el.childNodes)
+                .filter(n => n.nodeType === Node.TEXT_NODE)
+                .map(n => n.textContent).join('').trim().toLowerCase();
+            const rows = Array.from(document.querySelectorAll('div._198gff2'));
+            const target = rows.find(el => label(el) === want)
+                || rows.find(el => label(el).startsWith(want));
+            if (target) { target.click(); return true; }
+            return false;
+        }
+        """,
+        region,
+    )
+
+
+async def _click_next(page) -> None:
+    """Click the wizard's Next button."""
+    try:
+        await page.click('button.maeflab', timeout=5000)
+        return
+    except PlaywrightTimeoutError:
+        log.debug("Next button class not found; trying by text")
+    for label in ("Next", "Continue"):
+        locator = page.locator(f'button:has-text("{label}")')
+        if await locator.count() > 0:
+            await locator.last.click(timeout=TIMEOUT)
+            return
+    submit_buttons = await page.query_selector_all('button[type="submit"]')
+    if submit_buttons:
+        await submit_buttons[-1].click()
 
 
 async def _click_by_text(page, text: str) -> bool:
