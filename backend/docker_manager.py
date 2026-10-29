@@ -16,6 +16,7 @@ on these labels so the app never touches a container it didn't create.
 import os
 import re
 import shlex
+from contextlib import contextmanager
 
 import docker
 from docker.errors import NotFound, APIError
@@ -233,6 +234,20 @@ def remove_server(server_id: int) -> None:
     log.info("Container removed: server_id=%d", server_id)
 
 
+# Stop and restart block until the container is down, so the state they put
+# the server in can't be read from Docker; it's remembered here meanwhile.
+_transitions: dict[int, str] = {}
+
+
+@contextmanager
+def _transition(server_id: int, state: str):
+    _transitions[server_id] = state
+    try:
+        yield
+    finally:
+        _transitions.pop(server_id, None)
+
+
 def start_server(server_id: int) -> tuple[bool, str]:
     container = get_container(server_id)
     if not container:
@@ -245,11 +260,12 @@ def stop_server(server_id: int) -> tuple[bool, str]:
     container = get_container(server_id)
     if not container:
         return False, "Container not found"
-    try:
-        send_rcon(server_id, "stop")
-    except APIError:
-        pass
-    container.stop(timeout=60)
+    with _transition(server_id, "stopping"):
+        try:
+            send_rcon(server_id, "stop")
+        except APIError:
+            pass
+        container.stop(timeout=60)
     return True, "Stop command sent"
 
 
@@ -257,7 +273,8 @@ def restart_server(server_id: int) -> tuple[bool, str]:
     container = get_container(server_id)
     if not container:
         return False, "Container not found"
-    container.restart(timeout=60)
+    with _transition(server_id, "restarting"):
+        container.restart(timeout=60)
     return True, "Restart command sent"
 
 
@@ -267,6 +284,21 @@ def kill_server(server_id: int) -> tuple[bool, str]:
         return False, "Container not found"
     container.kill()
     return True, "Kill command sent"
+
+
+def _server_state(server_id: int, state: dict) -> str:
+    """What the server is doing: starting | running | unhealthy | stopping |
+    restarting | stopped."""
+    if server_id in _transitions:
+        return _transitions[server_id]
+    if state.get("Restarting"):
+        return "restarting"
+    if not state.get("Running"):
+        return "stopped"
+    health = (state.get("Health") or {}).get("Status")
+    if health in ("starting", "unhealthy"):
+        return health
+    return "running"
 
 
 def send_rcon(server_id: int, command: str, *, raw: bool = False) -> str:
@@ -409,7 +441,7 @@ def get_stats(server_id: int) -> dict:
     """One-shot container resource stats plus online player count via rcon."""
     container = get_container(server_id)
     if not container:
-        return {"running": False}
+        return {"running": False, "state": "not_created"}
 
     container.reload()
     state = container.attrs.get("State", {})
@@ -417,6 +449,7 @@ def get_stats(server_id: int) -> dict:
 
     result = {
         "running": running,
+        "state": _server_state(server_id, state),
         "status": state.get("Status"),
         "health": (state.get("Health") or {}).get("Status"),
     }

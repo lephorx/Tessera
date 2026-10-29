@@ -14,6 +14,7 @@ import {
 import { DefaultsEditor } from "@/components/DefaultsEditor"
 import { TopNav } from "@/components/TopNav"
 import { ServerCard } from "@/components/ServerCard"
+import { TRANSITIONAL_STATES } from "@/components/ServerStateBadge"
 import { ServerCreateModal } from "@/components/ServerCreateModal"
 import { ServerCreationProgress } from "@/components/ServerCreationProgress"
 import { AuthPage, AuthStatusError } from "@/components/AuthPage"
@@ -161,7 +162,10 @@ export default function DashboardPage() {
 
   const anyBusy =
     finishing.length > 0 ||
-    servers.some((s) => s.progress?.status === "in_progress")
+    servers.some((s) => s.progress?.status === "in_progress") ||
+    Object.values(statsMap).some(
+      (stats) => stats.state && TRANSITIONAL_STATES.includes(stats.state)
+    )
 
   useEffect(() => {
     if (!authenticated) return

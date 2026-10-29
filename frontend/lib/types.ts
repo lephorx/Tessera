@@ -12,7 +12,12 @@ export interface DnsRecord {
 }
 
 export type RuntimeStatus =
-  "not_created" | "stopped" | "starting" | "healthy" | "unhealthy" | "running"
+  | "not_created"
+  | "stopped"
+  | "starting"
+  | "healthy"
+  | "unhealthy"
+  | "running"
 
 export interface Server {
   id: number
@@ -49,8 +54,19 @@ export interface ServerProgress {
   message: string | null
 }
 
+/** what the server is doing right now, as shown in its state badge */
+export type ServerState =
+  | "not_created"
+  | "starting"
+  | "running"
+  | "unhealthy"
+  | "stopping"
+  | "restarting"
+  | "stopped"
+
 export interface ServerStats {
   running: boolean
+  state?: ServerState
   status: string
   health: string
   cpu_percent: number

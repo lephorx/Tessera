@@ -29,6 +29,7 @@ import { useSmoothPercent } from "@/hooks/useSmoothPercent"
 import { api } from "@/lib/api"
 import { parsePlayers, serverConnectAddress } from "@/lib/utils"
 import { CopyButton } from "@/components/CopyButton"
+import { ServerStateBadge, serverState } from "@/components/ServerStateBadge"
 
 interface Props {
   server: Server
@@ -91,9 +92,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
     busy && (progress?.action === "delete" || progress?.action === "provision")
   const percent = useSmoothPercent(progress?.percent ?? 0, busy)
 
-  const statusDot = isRunning ? "bg-emerald-500" : "bg-zinc-400"
-
-  const statusText = isRunning ? "Running" : "Stopped"
+  const state = serverState(stats, loadingAction)
 
   async function execAction(action: "start" | "stop" | "kill") {
     setLoadingAction(action)
@@ -145,12 +144,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
               </p>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className={`size-2 rounded-full ${statusDot}`} />
-            <span className="text-xs font-medium text-muted-foreground">
-              {statusText}
-            </span>
-          </div>
+          <ServerStateBadge state={state} className="shrink-0" />
         </div>
 
         {/* Stats row */}

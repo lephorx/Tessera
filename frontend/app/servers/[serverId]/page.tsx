@@ -43,6 +43,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { VersionPicker } from "@/components/VersionPicker"
 import { CopyButton } from "@/components/CopyButton"
+import {
+  ServerStateBadge,
+  TRANSITIONAL_STATES,
+  serverState,
+} from "@/components/ServerStateBadge"
 import { api } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
 import {
@@ -54,6 +59,7 @@ import { useSmoothPercent } from "@/hooks/useSmoothPercent"
 import type { Server, ServerProgress, ServerStats as Stats } from "@/lib/types"
 
 const POLL_INTERVAL = 5000
+const FAST_POLL_INTERVAL = 1500
 
 export default function ServerDetailPage() {
   const params = useParams()
@@ -174,15 +180,24 @@ export default function ServerDetailPage() {
       })
       .catch(() => toast.error("Failed to load server"))
       .finally(() => setLoadingServer(false))
+  }, [serverId, authenticated])
 
+  const isRunning = stats?.running ?? false
+  const state = serverState(stats, loadingAction)
+  // follow starting / stopping closely so the badge flips right away
+  const transitional = state !== null && TRANSITIONAL_STATES.includes(state)
+
+  useEffect(() => {
+    if (isNaN(serverId) || !authenticated) return
     fetchStats()
-    intervalRef.current = setInterval(fetchStats, POLL_INTERVAL)
+    intervalRef.current = setInterval(
+      fetchStats,
+      transitional ? FAST_POLL_INTERVAL : POLL_INTERVAL
+    )
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [serverId, authenticated, fetchStats])
-
-  const isRunning = stats?.running ?? false
+  }, [serverId, authenticated, fetchStats, transitional])
 
   // Follow tunnel creation (and the setup of a new server) step by step.
   const watching =
@@ -618,7 +633,10 @@ export default function ServerDetailPage() {
               <ArrowLeft className="size-3" />
               All Servers
             </Link>
-            <h1 className="text-xl font-semibold">{server.name}</h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-xl font-semibold">{server.name}</h1>
+              <ServerStateBadge state={state} />
+            </div>
             <p className="text-xs text-muted-foreground capitalize">
               {server.type} · {server.version}
               {server.loader_version ? ` / ${server.loader_version}` : ""} · :
