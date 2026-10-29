@@ -125,7 +125,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
   return (
     <>
       <div
-        className="lift relative flex flex-col gap-4 border border-border bg-card p-5 modern:gap-4 modern:overflow-hidden modern:p-5"
+        className="relative flex flex-col gap-4 border border-border bg-card p-5 modern:gap-4 modern:overflow-hidden modern:p-5"
         inert={overlay || undefined}
       >
         {overlay && progress && (

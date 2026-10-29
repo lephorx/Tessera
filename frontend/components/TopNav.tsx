@@ -37,7 +37,7 @@ export function TopNav({ user, onLogout }: Props) {
       {/* modern: a translucent bar that content scrolls under */}
       <header
         data-scrolled={scrolled}
-        className="border-b border-border bg-background modern:sticky modern:top-0 modern:z-40 modern:border-transparent modern:material modern:transition-[border-color,background-color] modern:duration-300 modern:data-[scrolled=false]:bg-background modern:data-[scrolled=true]:border-separator"
+        className="border-b border-border bg-background modern:sticky modern:top-0 modern:z-40 modern:border-transparent modern:material modern:transition-[border-color,background-color] modern:duration-300 modern:[view-transition-name:site-nav] modern:data-[scrolled=false]:bg-background modern:data-[scrolled=true]:border-separator"
       >
         <div className="mx-auto flex h-14 max-w-screen-xl items-center justify-between px-6 modern:h-16 modern:gap-4">
           <Link

@@ -18,17 +18,36 @@ export interface AuthState {
   user: AuthUser | null
 }
 
+// The last answer, kept for the whole visit: every page asks again, but a
+// page opened later starts from this instead of a full-screen spinner,
+// so moving between pages doesn't flash.
+let lastKnown: AuthState | null = null
+
+function remember(state: AuthState) {
+  lastKnown = state.loading ? lastKnown : state
+  return state
+}
+
 export function useAuth() {
-  const [state, setState] = useState<AuthState>({
-    loading: true,
-    statusError: null,
-    setupRequired: false,
-    authenticated: false,
-    user: null,
-  })
+  const [state, setStateRaw] = useState<AuthState>(
+    () =>
+      lastKnown ?? {
+        loading: true,
+        statusError: null,
+        setupRequired: false,
+        authenticated: false,
+        user: null,
+      }
+  )
+  const setState = useCallback(
+    (next: AuthState | ((s: AuthState) => AuthState)) =>
+      setStateRaw((s) => remember(typeof next === "function" ? next(s) : next)),
+    []
+  )
 
   const checkStatus = useCallback(async () => {
-    setState((s) => ({ ...s, loading: true }))
+    // only show the spinner when there's nothing to show yet
+    if (!lastKnown) setState((s) => ({ ...s, loading: true }))
     try {
       const { ok, data } = await authApi.status()
       if (!ok)
@@ -52,22 +71,25 @@ export function useAuth() {
         user: null,
       })
     }
-  }, [])
+  }, [setState])
 
   useEffect(() => {
     checkStatus()
   }, [checkStatus])
 
-  const onLoginSuccess = useCallback((token: string, user: AuthUser) => {
-    saveToken(token)
-    setState({
-      loading: false,
-      statusError: null,
-      setupRequired: false,
-      authenticated: true,
-      user,
-    })
-  }, [])
+  const onLoginSuccess = useCallback(
+    (token: string, user: AuthUser) => {
+      saveToken(token)
+      setState({
+        loading: false,
+        statusError: null,
+        setupRequired: false,
+        authenticated: true,
+        user,
+      })
+    },
+    [setState]
+  )
 
   const logout = useCallback(() => {
     clearToken()
@@ -78,7 +100,7 @@ export function useAuth() {
       authenticated: false,
       user: null,
     })
-  }, [])
+  }, [setState])
 
   return { ...state, onLoginSuccess, logout, retryStatus: checkStatus }
 }

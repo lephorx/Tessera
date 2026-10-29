@@ -3,6 +3,7 @@ import { Geist_Mono, Inter, Montserrat } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
 import { VersionBadge } from "@/components/VersionBadge"
+import { PageTransitions } from "@/components/PageTransitions"
 import { cn } from "@/lib/utils"
 import { DESIGN_BOOT_SCRIPT } from "@/lib/designBoot"
 
@@ -39,6 +40,7 @@ export default function RootLayout({
       </head>
       <body>
         {children}
+        <PageTransitions />
         <VersionBadge />
         <Toaster position="bottom-right" />
       </body>

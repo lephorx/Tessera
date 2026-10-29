@@ -549,9 +549,33 @@ export default function ServerDetailPage() {
 
   if (loadingServer) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
+      <>
+        <div className="flex min-h-screen items-center justify-center bg-background modern:hidden">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        </div>
+        {/* modern: the page's shape while the server loads */}
+        <div className="hidden min-h-screen bg-background modern:block">
+          <TopNav user={user} onLogout={logout} />
+          <div aria-hidden className="mx-auto w-full max-w-screen-xl px-6 py-8">
+            <div className="skeleton mb-5 h-4 w-24" />
+            <div className="flex items-center gap-4">
+              <div className="skeleton size-16 rounded-[15px]" />
+              <div className="flex-1 space-y-2.5">
+                <div className="skeleton h-7 w-64" />
+                <div className="skeleton h-4 w-80" />
+              </div>
+            </div>
+            <div className="skeleton mt-8 h-24 rounded-[16px]" />
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="skeleton h-[104px] rounded-[16px]" />
+              ))}
+            </div>
+            <div className="skeleton mt-5 h-11 w-[560px] max-w-full rounded-[16px]" />
+            <div className="skeleton mt-3 h-[420px] rounded-[16px]" />
+          </div>
+        </div>
+      </>
     )
   }
 
