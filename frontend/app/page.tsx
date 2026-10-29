@@ -255,11 +255,13 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background">
       <TopNav user={user} onLogout={logout} />
 
-      <main className="mx-auto max-w-screen-xl px-6 py-8">
+      <main className="mx-auto max-w-screen-xl px-6 py-8 modern:pt-10">
         {/* Page header */}
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex items-center justify-between modern:mb-7 modern:items-end">
           <div>
-            <h1 className="text-xl font-semibold">Servers</h1>
+            <h1 className="text-xl font-semibold modern:text-[32px] modern:leading-tight modern:font-bold">
+              Servers
+            </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {loading
                 ? "Loading…"
@@ -295,7 +297,7 @@ export default function DashboardPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 modern:gap-5">
             {cards.map((server) => (
               <ServerCard
                 key={server.id}

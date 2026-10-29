@@ -3,6 +3,10 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* per-design styles: <html data-design="modern|classic">, see lib/designBoot.ts */
+/* :is() so they outrank dark: and hover: utilities they refine */
+@custom-variant modern (&:is([data-design="modern"], [data-design="modern"] *));
+@custom-variant classic (&:is([data-design="classic"], [data-design="classic"] *));
 
 @theme inline {
     --font-heading: var(--font-sans);
@@ -45,6 +49,16 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+    --color-tint: var(--tint);
+    --color-status-green: var(--status-green);
+    --color-status-orange: var(--status-orange);
+    --color-status-blue: var(--status-blue);
+    --color-status-red: var(--status-red);
+    --color-status-gray: var(--status-gray);
+    --color-fill: var(--fill);
+    --color-separator: var(--separator);
+    --shadow-surface: var(--surface-shadow);
+    --shadow-raised: var(--raised-shadow);
 }
 
 :root {
@@ -116,6 +130,104 @@
     --sidebar-ring: oklch(0.552 0.016 285.938);
 }
 
+/* Classic keeps its look; these extra tokens only matter to modern styles */
+:root {
+    --tint: var(--primary);
+    --status-green: oklch(0.696 0.17 162.48);
+    --status-orange: oklch(0.769 0.188 70.08);
+    --status-blue: oklch(0.623 0.214 259.815);
+    --status-red: oklch(0.637 0.237 25.331);
+    --status-gray: oklch(0.705 0.015 286.067);
+    --fill: var(--muted);
+    --separator: var(--border);
+    --surface-shadow: none;
+    --raised-shadow: none;
+}
+
+/* ── Modern ─────────────────────────────────────────────────────────────
+   Apple-style: grouped surfaces on a tinted base, system type, one blue
+   accent for primary actions, system status colors. Follows the device's
+   light/dark setting. Contrast (WCAG): body text 15:1, secondary text
+   5.1:1 on cards / 4.5:1 on the base, white on the blue fill 4.7:1. */
+html[data-design="modern"] {
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "Inter", "Segoe UI", system-ui, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Geist Mono", monospace;
+    --radius: 0.75rem;
+
+    --background: #f2f2f7;
+    --foreground: #1d1d1f;
+    --card: #ffffff;
+    --card-foreground: #1d1d1f;
+    --popover: #ffffff;
+    --popover-foreground: #1d1d1f;
+    --primary: #0071e3;
+    --primary-foreground: #ffffff;
+    --secondary: rgb(118 118 128 / 0.12);
+    --secondary-foreground: #1d1d1f;
+    --muted: rgb(118 118 128 / 0.12);
+    --muted-foreground: #6e6e73;
+    --accent: rgb(118 118 128 / 0.12);
+    --accent-foreground: #1d1d1f;
+    --destructive: #d70015;
+    --border: rgb(60 60 67 / 0.14);
+    --input: rgb(60 60 67 / 0.2);
+    --ring: #0071e3;
+    --chart-1: #0071e3;
+    --chart-2: #1e7b34;
+    --chart-3: #c93400;
+    --chart-4: #8944ab;
+    --chart-5: #6e6e73;
+
+    --tint: #0066cc;
+    --status-green: #1e7b34;
+    --status-orange: #c93400;
+    --status-blue: #0066cc;
+    --status-red: #d70015;
+    --status-gray: #6e6e73;
+    --fill: rgb(118 118 128 / 0.12);
+    --separator: rgb(60 60 67 / 0.14);
+    --surface-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 2px 8px rgb(0 0 0 / 0.04);
+    --raised-shadow: 0 10px 40px rgb(0 0 0 / 0.14), 0 2px 8px rgb(0 0 0 / 0.06);
+}
+
+/* dark: a black base with brighter "elevated" surfaces on top of it */
+html[data-design="modern"].dark {
+    --background: #000000;
+    --foreground: #f5f5f7;
+    --card: #1c1c1e;
+    --card-foreground: #f5f5f7;
+    --popover: #2c2c2e;
+    --popover-foreground: #f5f5f7;
+    --primary: #0071e3;
+    --primary-foreground: #ffffff;
+    --secondary: rgb(118 118 128 / 0.24);
+    --secondary-foreground: #f5f5f7;
+    --muted: rgb(118 118 128 / 0.24);
+    --muted-foreground: #98989d;
+    --accent: rgb(118 118 128 / 0.24);
+    --accent-foreground: #f5f5f7;
+    --destructive: #ff453a;
+    --border: rgb(255 255 255 / 0.1);
+    --input: rgb(255 255 255 / 0.14);
+    --ring: #2997ff;
+    --chart-1: #2997ff;
+    --chart-2: #30d158;
+    --chart-3: #ff9f0a;
+    --chart-4: #bf5af2;
+    --chart-5: #98989d;
+
+    --tint: #2997ff;
+    --status-green: #30d158;
+    --status-orange: #ff9f0a;
+    --status-blue: #2997ff;
+    --status-red: #ff453a;
+    --status-gray: #98989d;
+    --fill: rgb(118 118 128 / 0.24);
+    --separator: rgb(255 255 255 / 0.1);
+    --surface-shadow: none;
+    --raised-shadow: 0 10px 40px rgb(0 0 0 / 0.6);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -126,4 +238,97 @@
   html {
     @apply font-sans;
     }
+}
+
+/* ── Modern: shared surfaces ─────────────────────────────────────────────
+   Most panels are built as "border bg-card" boxes; in modern they become
+   rounded grouped surfaces without touching every component. In the
+   components layer, so a component's own rounded or shadow class wins. */
+@layer components {
+    [data-design="modern"] :is(.border.bg-card, .border.bg-muted\/40, .border.bg-muted\/30, .border.bg-muted\/20) {
+        border-radius: var(--radius-xl);
+        box-shadow: var(--surface-shadow);
+    }
+}
+
+/* ── Modern: feel ────────────────────────────────────────────────────── */
+[data-design="modern"] {
+    body {
+        font-size: 0.875rem;
+        letter-spacing: -0.006em;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    h1, h2, h3 {
+        letter-spacing: -0.022em;
+    }
+
+    /* press feedback on pointer-down, scaled rather than nudged */
+    [data-slot="button"] {
+        transition-property: background-color, color, border-color, box-shadow, opacity, transform;
+        transition-duration: 160ms;
+        transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+    }
+    [data-slot="button"]:active:not(:disabled):not([aria-haspopup]) {
+        transform: scale(0.97);
+        transition-duration: 80ms;
+    }
+
+    /* hand-built fields (native selects, the version picker) look like the
+       Input primitive: a gray fill that turns into a ring on focus */
+    :is(select, textarea, button, input:not([type="checkbox"], [type="radio"], [type="file"])).border-input {
+        border-color: transparent;
+        border-radius: 10px;
+        background-color: var(--fill);
+    }
+    :is(select, textarea, button, input:not([type="checkbox"], [type="radio"], [type="file"])).border-input:focus-visible {
+        border-color: var(--ring);
+        background-color: transparent;
+    }
+
+    input[type="checkbox"],
+    input[type="radio"] {
+        accent-color: var(--primary);
+    }
+
+    :focus-visible {
+        outline-color: var(--ring);
+    }
+
+    ::selection {
+        background: rgb(0 113 227 / 0.25);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-design="modern"] [data-slot="button"]:active:not(:disabled) {
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    [data-design="modern"] .material {
+        backdrop-filter: none;
+        background-color: var(--card);
+    }
+}
+
+@media (prefers-contrast: more) {
+    [data-design="modern"] {
+        --separator: rgb(60 60 67 / 0.45);
+        --border: rgb(60 60 67 / 0.45);
+        --muted-foreground: #4a4a4f;
+    }
+    [data-design="modern"].dark {
+        --separator: rgb(255 255 255 / 0.35);
+        --border: rgb(255 255 255 / 0.35);
+        --muted-foreground: #c7c7cc;
+    }
+}
+
+/* the translucent functional layer: nav bar, sheets, floating panels */
+@utility material {
+    background-color: color-mix(in srgb, var(--background) 72%, transparent);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
 }

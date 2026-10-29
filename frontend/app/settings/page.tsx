@@ -11,12 +11,13 @@ import { SetupWizard } from "@/components/SetupWizard"
 import { UsersPanel } from "@/components/UsersPanel"
 import { AccountPanel } from "@/components/AccountPanel"
 import { PlayerListsPanel } from "@/components/PlayerListsPanel"
+import { DesignPanel } from "@/components/DesignPanel"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/hooks/useAuth"
 
-type Tab = "connection" | "users" | "players" | "account"
-const TABS: Tab[] = ["connection", "users", "players", "account"]
-const MEMBER_TABS: Tab[] = ["players", "account"]
+type Tab = "connection" | "users" | "players" | "account" | "appearance"
+const TABS: Tab[] = ["connection", "users", "players", "account", "appearance"]
+const MEMBER_TABS: Tab[] = ["players", "account", "appearance"]
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -68,12 +69,14 @@ export default function SettingsPage() {
       <main className="mx-auto w-full max-w-xl px-6 py-8">
         <Link
           href="/"
-          className="mb-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="mb-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground modern:mb-3 modern:text-[13px] modern:font-medium modern:text-tint modern:hover:text-tint/80"
         >
           <ArrowLeft className="size-3.5" />
           Servers
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-2xl font-semibold tracking-tight modern:text-[32px] modern:font-bold">
+          Settings
+        </h1>
 
         <Tabs
           value={current}
@@ -99,6 +102,7 @@ export default function SettingsPage() {
             )}
             <TabsTrigger value="players">Players</TabsTrigger>
             <TabsTrigger value="account">Account</TabsTrigger>
+            <TabsTrigger value="appearance">Appearance</TabsTrigger>
           </TabsList>
           {isAdmin && (
             <>
@@ -115,6 +119,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="account">
             <AccountPanel username={user?.username ?? ""} />
+          </TabsContent>
+          <TabsContent value="appearance">
+            <DesignPanel />
           </TabsContent>
         </Tabs>
       </main>

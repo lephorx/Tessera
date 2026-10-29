@@ -18,7 +18,9 @@ import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { python } from "@codemirror/legacy-modes/mode/python"
 import { lua } from "@codemirror/legacy-modes/mode/lua"
 import { java, kotlin } from "@codemirror/legacy-modes/mode/clike"
-import { githubDark } from "@uiw/codemirror-theme-github"
+import { githubDark, githubLight } from "@uiw/codemirror-theme-github"
+
+import { useLook } from "@/lib/design"
 
 // Server logs: timestamps, [thread/LEVEL] tags and the level words (WARN
 // orange, ERROR red)
@@ -141,6 +143,7 @@ export default function CodeEditor({
   onSave,
   autoFocus,
 }: Props) {
+  const { dark } = useLook()
   const extensions = useMemo(() => {
     const list: Extension[] = [fit, keymap.of([indentWithTab])]
     const language = languageFor(name)
@@ -169,7 +172,7 @@ export default function CodeEditor({
       readOnly={readOnly}
       editable={!readOnly}
       autoFocus={autoFocus}
-      theme={githubDark}
+      theme={dark ? githubDark : githubLight}
       extensions={extensions}
       height="100%"
       className="h-full"

@@ -27,7 +27,7 @@ import {
 import type { Server, ServerProgress, ServerStats } from "@/lib/types"
 import { useSmoothPercent } from "@/hooks/useSmoothPercent"
 import { api } from "@/lib/api"
-import { parsePlayers, serverConnectAddress } from "@/lib/utils"
+import { cn, parsePlayers, serverConnectAddress } from "@/lib/utils"
 import { CopyButton } from "@/components/CopyButton"
 import { ServerStateBadge, serverState } from "@/components/ServerStateBadge"
 import { ServerIcon } from "@/components/ServerIcon"
@@ -124,7 +124,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
   return (
     <>
       <div
-        className="relative flex flex-col gap-4 border border-border bg-card p-5"
+        className="relative flex flex-col gap-4 border border-border bg-card p-5 modern:gap-3.5 modern:overflow-hidden"
         inert={overlay || undefined}
       >
         {overlay && progress && (
@@ -136,12 +136,13 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
             <ServerIcon
               serverId={server.id}
               iconVersion={server.icon_version}
+              className="modern:size-12 modern:rounded-[12px]"
             />
-            <div className="min-w-0">
-              <h2 className="truncate text-base leading-tight font-semibold">
+            <div className="min-w-0 modern:pt-0.5">
+              <h2 className="truncate text-base leading-tight font-semibold modern:text-[15px]">
                 {server.name}
               </h2>
-              <p className="mt-0.5 text-xs text-muted-foreground capitalize">
+              <p className="mt-0.5 text-xs text-muted-foreground capitalize modern:truncate">
                 {server.type} · {server.version}
               </p>
               {server.owner && server.owner.id !== viewerId && (
@@ -155,7 +156,7 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
         </div>
 
         {/* Stats row */}
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
           <span className="flex items-center gap-1">
             <Users className="size-3" />
             {isRunning && stats
@@ -221,9 +222,11 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
           )
         ) : (
           server.tunnels.length > 0 && (
-            <div className="text-xs text-muted-foreground">
-              <p className="flex min-w-0 items-center gap-1">
-                <span className="truncate">{serverConnectAddress(server)}</span>
+            <div className="text-xs text-muted-foreground modern:rounded-[10px] modern:bg-fill modern:py-1.5 modern:pr-1.5 modern:pl-3">
+              <p className="flex min-w-0 items-center gap-1 modern:justify-between">
+                <span className="truncate modern:font-mono modern:text-[12px] modern:text-foreground">
+                  {serverConnectAddress(server)}
+                </span>
                 <CopyButton
                   value={serverConnectAddress(server) ?? ""}
                   className="size-5"
@@ -239,10 +242,15 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
         )}
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        {/* modern shows only the action that fits the state, tinted */}
+        <div className="flex items-center gap-2 modern:mt-auto">
           <Button
             size="sm"
-            className="flex-1 bg-emerald-600 text-white hover:bg-emerald-700"
+            className={cn(
+              "flex-1 bg-emerald-600 text-white hover:bg-emerald-700",
+              "modern:bg-status-green/15 modern:text-status-green modern:hover:bg-status-green/25",
+              isRunning && "modern:hidden"
+            )}
             disabled={busy || isRunning || loadingAction !== null}
             onClick={() => execAction("start")}
             aria-label="Start server"
@@ -256,7 +264,11 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
           </Button>
           <Button
             size="sm"
-            className="flex-1 bg-amber-500 text-white hover:bg-amber-600"
+            className={cn(
+              "flex-1 bg-amber-500 text-white hover:bg-amber-600",
+              "modern:bg-status-orange/15 modern:text-status-orange modern:hover:bg-status-orange/25",
+              !isRunning && "modern:hidden"
+            )}
             disabled={busy || !isRunning || loadingAction !== null}
             onClick={() => setConfirmAction("stop")}
             aria-label="Stop server"
@@ -271,17 +283,18 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
           <Button
             size="sm"
             variant="destructive"
-            className="flex-1"
+            className="flex-1 modern:size-7 modern:flex-none modern:px-0"
             disabled={busy || loadingAction !== null}
             onClick={() => setConfirmAction("kill")}
             aria-label="Kill server"
+            title="Kill server"
           >
             {loadingAction === "kill" ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <Skull className="size-3.5" />
             )}
-            Kill
+            <span className="modern:sr-only">Kill</span>
           </Button>
         </div>
 

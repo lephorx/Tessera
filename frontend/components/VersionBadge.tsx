@@ -18,7 +18,7 @@ export function VersionBadge() {
 
   if (!version) return null
   return (
-    <div className="pointer-events-none fixed bottom-3 left-3 z-30 rounded-md border border-border bg-card/80 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur-sm select-none">
+    <div className="pointer-events-none fixed bottom-3 left-3 z-30 rounded-md border border-border bg-card/80 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur-sm select-none modern:rounded-full modern:border-separator modern:material modern:px-2.5">
       CSCM v{version}
     </div>
   )

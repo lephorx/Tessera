@@ -4,6 +4,7 @@ import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
 import { VersionBadge } from "@/components/VersionBadge"
 import { cn } from "@/lib/utils"
+import { DESIGN_BOOT_SCRIPT } from "@/lib/designBoot"
 
 const montserrat = Montserrat({ subsets: ["latin"], variable: "--font-sans" })
 
@@ -20,6 +21,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      // the boot script sets the design and light/dark before React runs
+      suppressHydrationWarning
+      data-design="modern"
       className={cn(
         "dark antialiased",
         fontMono.variable,
@@ -27,6 +31,9 @@ export default function RootLayout({
         montserrat.variable
       )}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: DESIGN_BOOT_SCRIPT }} />
+      </head>
       <body>
         {children}
         <VersionBadge />

@@ -53,6 +53,7 @@ import {
 import { api } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
 import {
+  cn,
   DELETING_KEY,
   normalizeServer,
   serverConnectAddress,
@@ -630,22 +631,32 @@ export default function ServerDetailPage() {
           <div className="flex flex-col gap-1">
             <Link
               href="/"
-              className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground modern:mb-3 modern:w-fit modern:text-[13px] modern:font-medium modern:text-tint modern:hover:text-tint/80"
             >
-              <ArrowLeft className="size-3" />
+              <ArrowLeft className="size-3 modern:size-3.5" />
               All Servers
             </Link>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 modern:gap-4">
               <ServerIcon
                 serverId={server.id}
                 iconVersion={server.icon_version}
+                className="modern:size-16 modern:rounded-[15px]"
               />
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-xl font-semibold">{server.name}</h1>
-                <ServerStateBadge state={state} />
+              <div className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-xl font-semibold modern:text-[28px] modern:leading-tight modern:font-bold">
+                    {server.name}
+                  </h1>
+                  <ServerStateBadge state={state} />
+                </div>
+                <p className="hidden text-[13px] text-muted-foreground capitalize modern:block">
+                  {server.type} · {server.version}
+                  {server.loader_version ? ` / ${server.loader_version}` : ""} ·
+                  Port {server.port}
+                </p>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground capitalize">
+            <p className="text-xs text-muted-foreground capitalize modern:hidden">
               {server.type} · {server.version}
               {server.loader_version ? ` / ${server.loader_version}` : ""} · :
               {server.port}
@@ -667,10 +678,15 @@ export default function ServerDetailPage() {
           </div>
 
           {/* Control buttons */}
-          <div className="flex items-center gap-2">
+          {/* modern: tinted, and only the start or stop that applies */}
+          <div className="flex flex-wrap items-center gap-2 modern:self-end">
             <Button
               size="sm"
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              className={cn(
+                "bg-emerald-600 text-white hover:bg-emerald-700",
+                "modern:h-8 modern:bg-status-green/15 modern:px-4 modern:text-status-green modern:hover:bg-status-green/25",
+                isRunning && "modern:hidden"
+              )}
               disabled={isRunning || loadingAction !== null}
               onClick={() => execAction("start")}
             >
@@ -681,7 +697,11 @@ export default function ServerDetailPage() {
             </Button>
             <Button
               size="sm"
-              className="bg-amber-500 text-white hover:bg-amber-600"
+              className={cn(
+                "bg-amber-500 text-white hover:bg-amber-600",
+                "modern:h-8 modern:bg-status-orange/15 modern:px-4 modern:text-status-orange modern:hover:bg-status-orange/25",
+                !isRunning && "modern:hidden"
+              )}
               disabled={!isRunning || loadingAction !== null}
               onClick={() => setConfirmAction("stop")}
             >
@@ -692,7 +712,7 @@ export default function ServerDetailPage() {
             </Button>
             <Button
               size="sm"
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-blue-600 text-white hover:bg-blue-700 modern:h-8 modern:bg-status-blue/15 modern:px-4 modern:text-status-blue modern:hover:bg-status-blue/25"
               disabled={!isRunning || loadingAction !== null}
               onClick={() => execAction("restart")}
             >
@@ -704,6 +724,7 @@ export default function ServerDetailPage() {
             <Button
               size="sm"
               variant="destructive"
+              className="modern:h-8 modern:px-4"
               disabled={loadingAction !== null}
               onClick={() => setConfirmAction("kill")}
             >
@@ -715,7 +736,7 @@ export default function ServerDetailPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-destructive text-destructive hover:bg-destructive/10"
+              className="border-destructive text-destructive hover:bg-destructive/10 modern:h-8 modern:px-4 modern:text-destructive"
               onClick={() => setDeleteOpen(true)}
             >
               Delete
@@ -725,7 +746,7 @@ export default function ServerDetailPage() {
 
         {/* Playit address */}
         {server.local_only ? (
-          <div className="mb-6 flex items-center justify-between gap-4 border border-border bg-muted/40 px-4 py-3">
+          <div className="mb-6 flex items-center justify-between gap-4 border border-border bg-muted/40 px-4 py-3 modern:bg-card">
             <div className="text-xs text-muted-foreground">
               <span className="font-medium text-foreground">
                 Local address:{" "}
@@ -749,8 +770,8 @@ export default function ServerDetailPage() {
             </Button>
           </div>
         ) : server.tunnels.length > 0 ? (
-          <div className="mb-6 border border-border bg-muted/40 text-xs text-muted-foreground">
-            <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div className="mb-6 border border-border bg-muted/40 text-xs text-muted-foreground modern:bg-card">
+            <div className="flex items-center justify-between gap-4 px-4 py-3 modern:flex-wrap modern:gap-y-2">
               <div>
                 <span className="inline-flex items-center gap-1">
                   <span className="font-medium text-foreground">
@@ -812,7 +833,7 @@ export default function ServerDetailPage() {
             </div>
             {/* Why there is no custom Cloudflare address */}
             {!server.dns_records.some((record) => record.type === "CNAME") && (
-              <div className="flex items-center justify-between gap-4 border-t border-border px-4 py-2.5">
+              <div className="flex items-center justify-between gap-4 border-t border-border px-4 py-2.5 modern:flex-wrap modern:gap-y-2 modern:border-separator">
                 <p className="flex items-start gap-2 text-[11px]">
                   {server.cloudflare_available && server.dns_error && (
                     <TriangleAlert className="mt-px size-3.5 shrink-0 text-amber-500" />
@@ -846,7 +867,7 @@ export default function ServerDetailPage() {
             )}
           </div>
         ) : (
-          <div className="mb-6 flex items-center justify-between gap-4 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-muted-foreground">
+          <div className="mb-6 flex items-center justify-between gap-4 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-muted-foreground modern:rounded-xl modern:border-status-orange/30 modern:bg-status-orange/10">
             <div className="flex flex-1 items-start gap-2">
               <TriangleAlert className="mt-px size-4 shrink-0 text-amber-500" />
               <span className="flex-1">
@@ -916,14 +937,14 @@ export default function ServerDetailPage() {
 
           <TabsContent
             value="console"
-            className="mt-0 border border-t-0 border-border"
+            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
           >
             <Console serverId={serverId} isRunning={isRunning} />
           </TabsContent>
 
           <TabsContent
             value="files"
-            className="mt-0 border border-t-0 border-border"
+            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
             style={{ minHeight: "480px" }}
           >
             <FileExplorer serverId={serverId} />
@@ -931,14 +952,14 @@ export default function ServerDetailPage() {
 
           <TabsContent
             value="stats"
-            className="mt-0 border border-t-0 border-border"
+            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
           >
             <ServerStats stats={stats} loading={loadingServer} />
           </TabsContent>
 
           <TabsContent
             value="players"
-            className="mt-0 border border-t-0 border-border"
+            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
           >
             <PlayersPanel
               serverId={serverId}
@@ -949,7 +970,7 @@ export default function ServerDetailPage() {
 
           <TabsContent
             value="properties"
-            className="mt-0 border border-t-0 border-border"
+            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
             style={{ minHeight: "480px" }}
           >
             <PropertiesPanel serverId={serverId} />
@@ -957,14 +978,14 @@ export default function ServerDetailPage() {
 
           <TabsContent
             value="backups"
-            className="mt-0 border border-t-0 border-border"
+            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
           >
             <BackupsPanel serverId={serverId} />
           </TabsContent>
 
           <TabsContent
             value="settings"
-            className="mt-0 border border-t-0 border-border"
+            className="mt-0 border border-t-0 border-border modern:mt-3 modern:overflow-hidden modern:rounded-2xl modern:border-t modern:border-separator modern:bg-card modern:shadow-surface"
           >
             <div className="divide-y divide-border">
               <AppearancePanel
