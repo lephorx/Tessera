@@ -1,5 +1,6 @@
 """File management endpoints, operating directly on a server's data directory."""
 
+import mimetypes
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file
@@ -109,6 +110,116 @@ def download_file(server_id: int):
         return jsonify({"success": False, "message": "File not found"}), 404
 
     return send_file(target, as_attachment=True, download_name=target.name)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/servers/<id>/files/raw?path=icon.png — the file inline, for previews
+# ---------------------------------------------------------------------------
+@files_bp.route("/servers/<int:server_id>/files/raw", methods=["GET"])
+def raw_file(server_id: int):
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    target, err = _existing_file(server_id)
+    if err:
+        return err
+    mimetype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    if mimetype == "image/svg+xml":
+        mimetype = "text/plain"  # never let an uploaded SVG run scripts
+    response = send_file(target, mimetype=mimetype, as_attachment=False)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    return response
+
+
+# ---------------------------------------------------------------------------
+# GET /api/servers/<id>/files/content?path=server.properties
+#     -> { content, editable, size }; editable is false for binary files
+# PUT /api/servers/<id>/files/content?path=server.properties
+#     body: { "content": "..." } — overwrites a text file (or creates it)
+# ---------------------------------------------------------------------------
+MAX_EDIT_BYTES = 2 * 1024 * 1024
+
+
+def _existing_file(server_id: int):
+    if not _server_exists(server_id):
+        return None, (jsonify({"success": False, "message": "Server not found"}), 404)
+    rel_path = request.args.get("path", "")
+    if not rel_path:
+        return None, (jsonify({"success": False, "message": "'path' query parameter is required"}), 400)
+    target = _server_dir(server_id, rel_path)
+    if target is None:
+        return None, (jsonify({"success": False, "message": "Invalid path"}), 400)
+    if not target.exists() or not target.is_file():
+        return None, (jsonify({"success": False, "message": "File not found"}), 404)
+    return target, None
+
+
+def _read_text(target: Path) -> str | None:
+    """The file as text, or None when it is binary or too big to edit."""
+    if target.stat().st_size > MAX_EDIT_BYTES:
+        return None
+    data = target.read_bytes()
+    if b"\0" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+@files_bp.route("/servers/<int:server_id>/files/content", methods=["GET"])
+def get_file_content(server_id: int):
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    target, err = _existing_file(server_id)
+    if err:
+        return err
+    content = _read_text(target)
+    size = target.stat().st_size
+    if content is None:
+        reason = ("The file is larger than 2 MB." if size > MAX_EDIT_BYTES
+                  else "This is not a text file.")
+        return jsonify({"success": True, "editable": False, "size": size, "reason": reason}), 200
+    return jsonify({"success": True, "editable": True, "size": size, "content": content}), 200
+
+
+@files_bp.route("/servers/<int:server_id>/files/content", methods=["PUT"])
+def put_file_content(server_id: int):
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    if not _server_exists(server_id):
+        return jsonify({"success": False, "message": "Server not found"}), 404
+    body = request.get_json(silent=True) or {}
+    content = body.get("content")
+    if not isinstance(content, str):
+        return jsonify({"success": False, "message": "'content' must be a string"}), 400
+    data = content.encode("utf-8")
+    if len(data) > MAX_EDIT_BYTES:
+        return jsonify({"success": False, "message": "Files larger than 2 MB can't be edited here"}), 413
+
+    rel_path = request.args.get("path", "")
+    target = _server_dir(server_id, rel_path) if rel_path else None
+    if target is None:
+        return jsonify({"success": False, "message": "Invalid path"}), 400
+    if target.is_dir():
+        return jsonify({"success": False, "message": "Path is a directory"}), 400
+    if target.exists() and _read_text(target) is None:
+        return jsonify({"success": False, "message": "Only text files can be edited"}), 400
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # write in place so the file keeps its owner and permissions
+        with open(target, "wb") as fh:
+            fh.write(data)
+    except OSError as exc:
+        log.warning("File save failed: server_id=%d path=%s error=%s", server_id, target, exc)
+        return jsonify({"success": False, "message": f"Could not save the file: {exc}"}), 500
+
+    log.info("File edited: server_id=%d path=%s", server_id, target)
+    return jsonify({"success": True, "message": f"Saved {target.name}", "size": len(data)}), 200
 
 
 # ---------------------------------------------------------------------------

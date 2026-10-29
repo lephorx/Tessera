@@ -18,6 +18,26 @@ function getStoredToken(): string | null {
   return localStorage.getItem(JWT_KEY)
 }
 
+// GET a file with the login token (window.open and <img src> can't send it)
+async function fetchBlob(url: string): Promise<Blob> {
+  const token = getStoredToken()
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+  })
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`
+    try {
+      const body = await res.json()
+      message = body.message || body.error || message
+    } catch {
+      // not JSON
+    }
+    throw new Error(message)
+  }
+  return res.blob()
+}
+
 async function apiCall(endpoint: string, options: RequestInit = {}) {
   const isFormData = options.body instanceof FormData
 
@@ -585,6 +605,34 @@ export const api = {
       apiCall(`/servers/${id}/files/delete?path=${encodePath(path)}`, {
         method: "DELETE",
       }),
+    /** text of a file; editable is false for binary or very large files */
+    content: (id: number, path: string) =>
+      apiCall(
+        `/servers/${id}/files/content?path=${encodePath(path)}`
+      ) as Promise<{
+        editable: boolean
+        size: number
+        content?: string
+        reason?: string
+      }>,
+    save: (id: number, path: string, content: string) =>
+      apiCall(`/servers/${id}/files/content?path=${encodePath(path)}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      }),
+    /** the file itself, e.g. an image to preview (needs the login token) */
+    blob: (id: number, path: string) =>
+      fetchBlob(`/api/servers/${id}/files/raw?path=${encodePath(path)}`),
+    /** download a file, or a folder as .zip, with the login token */
+    download: async (url: string, filename: string) => {
+      const blob = await fetchBlob(url)
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = href
+      a.download = filename
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(href), 10_000)
+    },
   },
   serverTypes: () => apiCall("/server-types"),
   console: {

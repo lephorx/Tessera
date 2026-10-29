@@ -12,6 +12,8 @@ import {
   MoreHorizontal,
   Loader2,
   Home,
+  Pencil,
+  Image as ImageIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -29,6 +31,11 @@ import {
   FileUploadProgress,
   type FileUploadItem,
 } from "@/components/FileUploadProgress"
+import {
+  FileViewer,
+  isEditableFile,
+  isImageFile,
+} from "@/components/FileViewer"
 
 // LocalEntry extends FileEntry with an optional `pending` flag for optimistic UI
 type LocalEntry = FileEntry & { pending?: boolean }
@@ -62,6 +69,11 @@ export function FileExplorer({ serverId }: Props) {
   const [uploads, setUploads] = useState<FileUploadItem[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [opened, setOpened] = useState<{
+    path: string
+    name: string
+    edit: boolean
+  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
   const dismissUploadsRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -121,11 +133,10 @@ export function FileExplorer({ serverId }: Props) {
     setMenu(null)
   }
 
-  function handleEntryClick(entry: FileEntry) {
-    if (entry.type === "directory") {
-      const next = path === "/" ? `/${entry.name}` : `${path}/${entry.name}`
-      loadDir(next)
-    }
+  function handleEntryClick(entry: FileEntry, edit = false) {
+    const next = path === "/" ? `/${entry.name}` : `${path}/${entry.name}`
+    if (entry.type === "directory") loadDir(next)
+    else setOpened({ path: next, name: entry.name, edit })
   }
 
   async function handleDelete() {
@@ -157,20 +168,36 @@ export function FileExplorer({ serverId }: Props) {
     }
   }
 
+  // fetched with the login token, which a plain link can't send
+  function download(url: string, filename: string, message: string) {
+    setMenu(null)
+    const id = toast.loading(message)
+    api.files
+      .download(url, filename)
+      .then(() => toast.dismiss(id))
+      .catch((err) =>
+        toast.error(err instanceof Error ? err.message : "Download failed", {
+          id,
+        })
+      )
+  }
+
   function handleDownload(name: string) {
     const filePath = path === "/" ? `/${name}` : `${path}/${name}`
-    const url = api.files.downloadUrl(serverId, filePath)
-    window.open(url, "_blank", "noopener")
-    toast.info(`Downloading "${name}"…`)
-    setMenu(null)
+    download(
+      api.files.downloadUrl(serverId, filePath),
+      name,
+      `Downloading "${name}"…`
+    )
   }
 
   function handleDownloadFolder(name: string) {
     const folderPath = path === "/" ? `/${name}` : `${path}/${name}`
-    const url = api.files.downloadFolderUrl(serverId, folderPath)
-    window.open(url, "_blank", "noopener")
-    toast.info(`Preparing zip for "${name}"…`)
-    setMenu(null)
+    download(
+      api.files.downloadFolderUrl(serverId, folderPath),
+      `${name}.zip`,
+      `Preparing zip for "${name}"…`
+    )
   }
 
   async function uploadFiles(files: FileList | File[]) {
@@ -207,7 +234,12 @@ export function FileExplorer({ serverId }: Props) {
       setUploads((prev) =>
         prev.map((u) =>
           u.id === id
-            ? { ...u, loaded: info.loaded, status: info.status, error: info.error }
+            ? {
+                ...u,
+                loaded: info.loaded,
+                status: info.status,
+                error: info.error,
+              }
             : u
         )
       )
@@ -350,16 +382,15 @@ export function FileExplorer({ serverId }: Props) {
                     <button
                       className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                       disabled={!!entry.pending}
-                      onDoubleClick={() => handleEntryClick(entry)}
-                      onClick={() => {
-                        if (entry.type === "directory") handleEntryClick(entry)
-                      }}
-                      aria-label={`${entry.type === "directory" ? "Open folder" : "File"}: ${entry.name}`}
+                      onClick={() => handleEntryClick(entry)}
+                      aria-label={`${entry.type === "directory" ? "Open folder" : "Preview"}: ${entry.name}`}
                     >
                       {entry.pending ? (
                         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
                       ) : entry.type === "directory" ? (
                         <Folder className="size-4 shrink-0 text-primary" />
+                      ) : isImageFile(entry.name) ? (
+                        <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
                       ) : (
                         <File className="size-4 shrink-0 text-muted-foreground" />
                       )}
@@ -374,6 +405,20 @@ export function FileExplorer({ serverId }: Props) {
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {formatSize(entry.size)}
                     </span>
+
+                    {/* Edit — text files only, shown on hover */}
+                    {!entry.pending &&
+                      entry.type === "file" &&
+                      isEditableFile(entry.name) && (
+                        <button
+                          className="flex size-6 items-center justify-center opacity-0 transition-all group-hover:opacity-100 hover:bg-muted focus-visible:opacity-100"
+                          onClick={() => handleEntryClick(entry, true)}
+                          aria-label={`Edit ${entry.name}`}
+                          title="Edit"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                      )}
 
                     {/* Three-dot trigger — hidden for pending entries */}
                     {!entry.pending && (
@@ -485,6 +530,15 @@ export function FileExplorer({ serverId }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Preview / editor */}
+      <FileViewer
+        key={opened ? `${opened.path}:${opened.edit}` : "closed"}
+        serverId={serverId}
+        file={opened}
+        onClose={() => setOpened(null)}
+        onSaved={() => loadDir(path)}
+      />
 
       {/* Floating per-file upload progress */}
       <FileUploadProgress

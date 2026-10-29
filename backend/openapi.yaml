@@ -1017,6 +1017,57 @@ paths:
           description: File contents
         "404": { description: Not found }
 
+  /api/servers/{id}/files/raw:
+    get:
+      tags: [Files]
+      summary: The file inline (not as a download), for image previews
+      parameters:
+        - { $ref: "#/components/parameters/ServerId" }
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: File contents with its content type }
+        "404": { description: Not found }
+
+  /api/servers/{id}/files/content:
+    get:
+      tags: [Files]
+      summary: A file as text, for previewing and editing
+      description: editable is false (and content missing) for binary files and files over 2 MB.
+      parameters:
+        - { $ref: "#/components/parameters/ServerId" }
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: File text
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  editable: { type: boolean }
+                  size: { type: integer }
+                  content: { type: string }
+                  reason: { type: string }
+        "404": { description: Not found }
+    put:
+      tags: [Files]
+      summary: Save a text file (creates it if missing)
+      parameters:
+        - { $ref: "#/components/parameters/ServerId" }
+        - { name: path, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties: { content: { type: string } }
+      responses:
+        "200": { description: Saved }
+        "400": { description: Invalid path, a directory, or a binary file }
+        "413": { description: Larger than 2 MB }
+
   /api/servers/{id}/files/upload:
     post:
       tags: [Files]
