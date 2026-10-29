@@ -42,6 +42,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { VersionPicker } from "@/components/VersionPicker"
+import { CopyButton } from "@/components/CopyButton"
 import { api } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
 import {
@@ -725,15 +726,23 @@ export default function ServerDetailPage() {
           <div className="mb-6 border border-border bg-muted/40 text-xs text-muted-foreground">
             <div className="flex items-center justify-between gap-4 px-4 py-3">
               <div>
-                <span className="font-medium text-foreground">
-                  {server.type === "bedrock" ? "Address: " : "Connect: "}
+                <span className="inline-flex items-center gap-1">
+                  <span className="font-medium text-foreground">
+                    {server.type === "bedrock" ? "Address: " : "Connect: "}
+                  </span>
+                  {serverConnectAddress(server)}
+                  <CopyButton value={serverConnectAddress(server) ?? ""} />
                 </span>
-                {serverConnectAddress(server)}
                 {server.dns_records.some(
                   (record) => record.type === "CNAME"
                 ) && (
-                  <p className="mt-1 text-[11px]">
+                  <p className="mt-1 flex items-center gap-1 text-[11px]">
                     Playit address: {server.tunnels[0].address}
+                    <CopyButton
+                      value={server.tunnels[0].address}
+                      label="Copy Playit address"
+                      className="size-5"
+                    />
                   </p>
                 )}
                 {server.type === "bedrock" && (
@@ -742,6 +751,13 @@ export default function ServerDetailPage() {
                       Port:{" "}
                     </span>
                     {server.tunnels[0].external_port ?? "See Playit dashboard"}
+                    {server.tunnels[0].external_port && (
+                      <CopyButton
+                        value={String(server.tunnels[0].external_port)}
+                        label="Copy port"
+                        className="ml-1 align-middle"
+                      />
+                    )}
                     <p className="mt-1 text-[11px]">
                       Enter the address and port separately in Bedrock.
                     </p>

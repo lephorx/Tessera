@@ -28,6 +28,7 @@ import type { Server, ServerProgress, ServerStats } from "@/lib/types"
 import { useSmoothPercent } from "@/hooks/useSmoothPercent"
 import { api } from "@/lib/api"
 import { parsePlayers, serverConnectAddress } from "@/lib/utils"
+import { CopyButton } from "@/components/CopyButton"
 
 interface Props {
   server: Server
@@ -220,7 +221,13 @@ export function ServerCard({ server, stats, onRefresh, viewerId }: Props) {
         ) : (
           server.tunnels.length > 0 && (
             <div className="text-xs text-muted-foreground">
-              <p className="truncate">{serverConnectAddress(server)}</p>
+              <p className="flex min-w-0 items-center gap-1">
+                <span className="truncate">{serverConnectAddress(server)}</span>
+                <CopyButton
+                  value={serverConnectAddress(server) ?? ""}
+                  className="size-5"
+                />
+              </p>
               {server.type === "bedrock" && server.tunnels.length > 0 && (
                 <p className="truncate font-medium text-foreground">
                   Port {server.tunnels[0].external_port}
