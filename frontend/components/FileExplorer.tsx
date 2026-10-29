@@ -63,7 +63,10 @@ export function FileExplorer({ serverId }: Props) {
   const [path, setPath] = useState("/")
   const [entries, setEntries] = useState<LocalEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  // names to delete after confirming (one from a menu, or the selection)
+  const [deleteTargets, setDeleteTargets] = useState<string[] | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const lastClicked = useRef<number | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploads, setUploads] = useState<FileUploadItem[]>([])
@@ -106,6 +109,8 @@ export function FileExplorer({ serverId }: Props) {
         const res = await api.files.list(serverId, targetPath)
         setEntries(res?.entries ?? [])
         setPath(res?.path ?? targetPath)
+        setSelected(new Set())
+        lastClicked.current = null
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Failed to load directory"
@@ -139,33 +144,50 @@ export function FileExplorer({ serverId }: Props) {
     else setOpened({ path: next, name: entry.name, edit })
   }
 
+  const pathOf = (name: string) =>
+    path === "/" ? `/${name}` : `${path}/${name}`
+
   async function handleDelete() {
-    if (!deleteTarget) return
+    if (!deleteTargets?.length) return
+    const names = deleteTargets
     setDeleting(true)
 
-    // Optimistically remove the entry right away
-    const removed = entries.find((e) => {
-      const ep = path === "/" ? `/${e.name}` : `${path}/${e.name}`
-      return ep === deleteTarget
-    })
-    setEntries((prev) =>
-      prev.filter((e) => {
-        const ep = path === "/" ? `/${e.name}` : `${path}/${e.name}`
-        return ep !== deleteTarget
-      })
-    )
-    setDeleteTarget(null)
+    // Optimistically remove the entries right away
+    const removed = entries.filter((e) => names.includes(e.name))
+    setEntries((prev) => prev.filter((e) => !names.includes(e.name)))
+    setSelected(new Set())
+    setDeleteTargets(null)
 
-    try {
-      await api.files.delete(serverId, deleteTarget)
-      toast.success(`"${removed?.name ?? deleteTarget}" deleted`)
-    } catch (err) {
-      // Restore entry on failure
-      if (removed) setEntries((prev) => [...prev, removed])
-      toast.error(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setDeleting(false)
+    const results = await Promise.allSettled(
+      names.map((name) => api.files.delete(serverId, pathOf(name)))
+    )
+    const failed = names.filter((_, i) => results[i].status === "rejected")
+    // put back what could not be deleted
+    if (failed.length)
+      setEntries((prev) => [
+        ...prev,
+        ...removed.filter((e) => failed.includes(e.name)),
+      ])
+    const done = names.length - failed.length
+    if (failed.length) {
+      const first = results.find((r) => r.status === "rejected") as
+        | PromiseRejectedResult
+        | undefined
+      const reason =
+        first?.reason instanceof Error ? first.reason.message : "Delete failed"
+      toast.error(
+        names.length === 1
+          ? reason
+          : `${failed.length} of ${names.length} could not be deleted (${failed.join(", ")}): ${reason}`
+      )
     }
+    if (done)
+      toast.success(
+        names.length === 1
+          ? `"${names[0]}" deleted`
+          : `${done} item${done === 1 ? "" : "s"} deleted`
+      )
+    setDeleting(false)
   }
 
   // fetched with the login token, which a plain link can't send
@@ -292,6 +314,37 @@ export function FileExplorer({ serverId }: Props) {
     }
   }
 
+  const sorted = [...entries].sort((a, b) => {
+    if (a.type !== b.type) return a.type === "directory" ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+  const selectable = sorted.filter((e) => !e.pending)
+  const allSelected =
+    selectable.length > 0 && selectable.every((e) => selected.has(e.name))
+
+  // click toggles one; shift-click selects the range from the last click
+  function toggleSelected(index: number, shift: boolean) {
+    const name = sorted[index].name
+    const next = new Set(selected)
+    if (shift && lastClicked.current !== null) {
+      const [from, to] = [lastClicked.current, index].sort((a, b) => a - b)
+      const on = !selected.has(name)
+      for (const e of sorted.slice(from, to + 1))
+        if (!e.pending) {
+          if (on) next.add(e.name)
+          else next.delete(e.name)
+        }
+    } else if (next.has(name)) next.delete(name)
+    else next.add(name)
+    lastClicked.current = index
+    setSelected(next)
+  }
+
+  const deleteNames = deleteTargets ?? []
+  const deleteFolders = entries.filter(
+    (e) => deleteNames.includes(e.name) && e.type === "directory"
+  ).length
+
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
@@ -346,6 +399,51 @@ export function FileExplorer({ serverId }: Props) {
         </div>
       </div>
 
+      {/* Selection bar */}
+      {!loading && selectable.length > 0 && (
+        <div className="flex h-9 items-center gap-3 border-b border-border px-4 text-xs">
+          <input
+            type="checkbox"
+            className="size-3.5 cursor-pointer accent-primary"
+            aria-label={allSelected ? "Select none" : "Select all"}
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.size > 0 && !allSelected
+            }}
+            onChange={() =>
+              setSelected(
+                allSelected ? new Set() : new Set(selectable.map((e) => e.name))
+              )
+            }
+          />
+          {selected.size > 0 ? (
+            <>
+              <span className="font-medium">{selected.size} selected</span>
+              <button
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setSelected(new Set())}
+              >
+                Clear
+              </button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="ml-auto h-7"
+                disabled={deleting}
+                onClick={() => setDeleteTargets([...selected])}
+              >
+                <Trash2 className="size-3.5" />
+                Delete {selected.size}
+              </Button>
+            </>
+          ) : (
+            <span className="text-muted-foreground">
+              Select all · Shift-click to select a range
+            </span>
+          )}
+        </div>
+      )}
+
       {/* File list drop zone */}
       <div
         ref={dropZoneRef}
@@ -364,94 +462,105 @@ export function FileExplorer({ serverId }: Props) {
           </div>
         ) : (
           <ul>
-            {entries
-              .sort((a, b) => {
-                if (a.type !== b.type) return a.type === "directory" ? -1 : 1
-                return a.name.localeCompare(b.name)
-              })
-              .map((entry) => {
-                const entryPath =
-                  path === "/" ? `/${entry.name}` : `${path}/${entry.name}`
+            {sorted.map((entry, index) => {
+              const entryPath = pathOf(entry.name)
+              const isSelected = selected.has(entry.name)
 
-                return (
-                  <li
-                    key={entry.pending ? `pending-${entry.name}` : entry.name}
-                    className={`group flex items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/60 ${entry.pending ? "opacity-50" : ""}`}
+              return (
+                <li
+                  key={entry.pending ? `pending-${entry.name}` : entry.name}
+                  className={`group flex items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/60 ${entry.pending ? "opacity-50" : ""} ${isSelected ? "bg-primary/10" : ""}`}
+                >
+                  {/* Select — always visible once something is selected */}
+                  <input
+                    type="checkbox"
+                    className={`size-3.5 shrink-0 cursor-pointer accent-primary transition-opacity ${
+                      selected.size > 0
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    }`}
+                    disabled={!!entry.pending}
+                    checked={isSelected}
+                    aria-label={`Select ${entry.name}`}
+                    onChange={() => {}}
+                    onClick={(e) => toggleSelected(index, e.shiftKey)}
+                  />
+                  {/* Icon + name */}
+                  <button
+                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                    disabled={!!entry.pending}
+                    onClick={() => handleEntryClick(entry)}
+                    aria-label={`${entry.type === "directory" ? "Open folder" : "Preview"}: ${entry.name}`}
                   >
-                    {/* Icon + name */}
-                    <button
-                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                      disabled={!!entry.pending}
-                      onClick={() => handleEntryClick(entry)}
-                      aria-label={`${entry.type === "directory" ? "Open folder" : "Preview"}: ${entry.name}`}
-                    >
-                      {entry.pending ? (
-                        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-                      ) : entry.type === "directory" ? (
-                        <Folder className="size-4 shrink-0 text-primary" />
-                      ) : isImageFile(entry.name) ? (
-                        <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <File className="size-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <span
-                        className={`truncate text-sm ${entry.pending ? "text-muted-foreground italic" : ""}`}
-                      >
-                        {entry.name}
-                      </span>
-                    </button>
-
-                    {/* Size */}
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatSize(entry.size)}
-                    </span>
-
-                    {/* Edit — text files only, shown on hover */}
-                    {!entry.pending &&
-                      entry.type === "file" &&
-                      isEditableFile(entry.name) && (
-                        <button
-                          className="flex size-6 items-center justify-center opacity-0 transition-all group-hover:opacity-100 hover:bg-muted focus-visible:opacity-100"
-                          onClick={() => handleEntryClick(entry, true)}
-                          aria-label={`Edit ${entry.name}`}
-                          title="Edit"
-                        >
-                          <Pencil className="size-3.5" />
-                        </button>
-                      )}
-
-                    {/* Three-dot trigger — hidden for pending entries */}
-                    {!entry.pending && (
-                      <button
-                        className="flex size-6 items-center justify-center opacity-0 transition-all group-hover:opacity-100 hover:bg-muted"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (menu?.name === entry.name) {
-                            setMenu(null)
-                            return
-                          }
-                          const rect = (
-                            e.currentTarget as HTMLElement
-                          ).getBoundingClientRect()
-                          setMenu({
-                            name: entry.name,
-                            entryPath,
-                            isFile: entry.type === "file",
-                            x: rect.right,
-                            y: rect.bottom + 4,
-                          })
-                        }}
-                        aria-label={`Actions for ${entry.name}`}
-                        aria-haspopup="true"
-                        aria-expanded={menu?.name === entry.name}
-                      >
-                        <MoreHorizontal className="size-3.5" />
-                      </button>
+                    {entry.pending ? (
+                      <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                    ) : entry.type === "directory" ? (
+                      <Folder className="size-4 shrink-0 text-primary" />
+                    ) : isImageFile(entry.name) ? (
+                      <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <File className="size-4 shrink-0 text-muted-foreground" />
                     )}
-                  </li>
-                )
-              })}
+                    <span
+                      className={`truncate text-sm ${entry.pending ? "text-muted-foreground italic" : ""}`}
+                    >
+                      {entry.name}
+                    </span>
+                  </button>
+
+                  {/* Size */}
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {formatSize(entry.size)}
+                  </span>
+
+                  {/* Edit — text files only, shown on hover */}
+                  {!entry.pending &&
+                  entry.type === "file" &&
+                  isEditableFile(entry.name) ? (
+                    <button
+                      className="flex size-6 items-center justify-center opacity-0 transition-all group-hover:opacity-100 hover:bg-muted focus-visible:opacity-100"
+                      onClick={() => handleEntryClick(entry, true)}
+                      aria-label={`Edit ${entry.name}`}
+                      title="Edit"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                  ) : (
+                    <span className="size-6 shrink-0" aria-hidden />
+                  )}
+
+                  {/* Three-dot trigger — hidden for pending entries */}
+                  {!entry.pending && (
+                    <button
+                      className="flex size-6 items-center justify-center opacity-0 transition-all group-hover:opacity-100 hover:bg-muted"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (menu?.name === entry.name) {
+                          setMenu(null)
+                          return
+                        }
+                        const rect = (
+                          e.currentTarget as HTMLElement
+                        ).getBoundingClientRect()
+                        setMenu({
+                          name: entry.name,
+                          entryPath,
+                          isFile: entry.type === "file",
+                          x: rect.right,
+                          y: rect.bottom + 4,
+                        })
+                      }}
+                      aria-label={`Actions for ${entry.name}`}
+                      aria-haspopup="true"
+                      aria-expanded={menu?.name === entry.name}
+                    >
+                      <MoreHorizontal className="size-3.5" />
+                    </button>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
@@ -488,7 +597,7 @@ export function FileExplorer({ serverId }: Props) {
               role="menuitem"
               className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
               onClick={() => {
-                setDeleteTarget(menu.entryPath)
+                setDeleteTargets([menu.name])
                 setMenu(null)
               }}
             >
@@ -501,22 +610,55 @@ export function FileExplorer({ serverId }: Props) {
 
       {/* Delete confirm */}
       <Dialog
-        open={deleteTarget !== null}
+        open={deleteTargets !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null)
+          if (!open) setDeleteTargets(null)
         }}
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete File</DialogTitle>
+            <DialogTitle>
+              {deleteNames.length === 1
+                ? `Delete ${deleteFolders ? "folder" : "file"}`
+                : `Delete ${deleteNames.length} items`}
+            </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete{" "}
-            <span className="font-mono text-foreground">{deleteTarget}</span>?
-            This cannot be undone.
-          </p>
+          {deleteNames.length === 1 ? (
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete{" "}
+              <span className="font-mono text-foreground">
+                {pathOf(deleteNames[0])}
+              </span>
+              {deleteFolders ? " and everything in it" : ""}? This cannot be
+              undone.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                These are deleted for good
+                {deleteFolders === 1
+                  ? `, including everything inside ${
+                      entries.find(
+                        (e) =>
+                          deleteNames.includes(e.name) && e.type === "directory"
+                      )?.name
+                    }`
+                  : deleteFolders > 1
+                    ? `, including everything inside the ${deleteFolders} folders`
+                    : ""}
+                :
+              </p>
+              <ul className="max-h-40 overflow-y-auto rounded-md border border-border bg-muted/30 px-3 py-2 font-mono text-xs">
+                {deleteNames.map((n) => (
+                  <li key={n} className="truncate">
+                    {n}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+            <Button variant="outline" onClick={() => setDeleteTargets(null)}>
               Cancel
             </Button>
             <Button

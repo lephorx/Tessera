@@ -1,6 +1,7 @@
 """File management endpoints, operating directly on a server's data directory."""
 
 import mimetypes
+import shutil
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file
@@ -279,9 +280,16 @@ def delete_file(server_id: int):
         return jsonify({"success": False, "message": "Invalid path"}), 400
     if not target.exists():
         return jsonify({"success": False, "message": "File not found"}), 404
-    if target.is_dir():
-        return jsonify({"success": False, "message": "Path is a directory, not a file"}), 400
+    if target == _server_dir(server_id, ""):
+        return jsonify({"success": False, "message": "The server folder itself can't be deleted"}), 400
 
-    target.unlink()
-    log.info("File deleted: server_id=%d path=%s", server_id, target)
+    try:
+        if target.is_dir() and not target.is_symlink():
+            shutil.rmtree(target)  # a folder goes with everything in it
+        else:
+            target.unlink()
+    except OSError as exc:
+        log.warning("Delete failed: server_id=%d path=%s error=%s", server_id, target, exc)
+        return jsonify({"success": False, "message": f"Could not delete {target.name}: {exc}"}), 500
+    log.info("Deleted: server_id=%d path=%s", server_id, target)
     return jsonify({"success": True, "message": f"Deleted {target.name}"}), 200
