@@ -352,6 +352,60 @@ def create_server_from_pack():
 
 
 # ---------------------------------------------------------------------------
+# PUT /api/servers/<id>/pack — multipart: "pack" (.mrpack file)
+# Tessera Launcher sends a newer server pack when the instance's mods change.
+# The file is swapped in and a running server restarted: on start the itzg image
+# installs the pack again and removes files the previous pack had added.
+# ---------------------------------------------------------------------------
+@servers_bp.route("/servers/<int:server_id>/pack", methods=["PUT"])
+def update_server_pack(server_id: int):
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    with get_db() as conn:
+        row = conn.execute("SELECT type FROM servers WHERE id = ?", (server_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "message": "Server not found"}), 404
+    if row["type"] != "modpack":
+        return jsonify({"error": "Only servers created from a modpack take a new pack"}), 400
+
+    upload = request.files.get("pack")
+    if upload is None:
+        return jsonify({"error": "Upload the modpack as 'pack'"}), 400
+    data = upload.read(MAX_PACK_BYTES + 1)
+    if len(data) > MAX_PACK_BYTES:
+        return jsonify({"error": "The modpack is bigger than 200 MB"}), 413
+    try:
+        index = _read_mrpack(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    pack_path = os.path.join(server_data_dir(server_id), MODPACK_FILE)
+    os.makedirs(os.path.dirname(pack_path), exist_ok=True)
+    tmp = pack_path + ".new"
+    with open(tmp, "wb") as fh:
+        fh.write(data)
+    os.replace(tmp, pack_path)
+
+    deps = index["dependencies"]
+    version = str(deps["minecraft"])
+    loader = next((f"{k} {deps[k]}" for k in ("fabric-loader", "quilt-loader", "forge", "neoforge") if deps.get(k)), None)
+    with get_db() as conn:
+        conn.execute("UPDATE servers SET version = ?, loader_version = ? WHERE id = ?", (version, loader, server_id))
+
+    running = docker_manager.runtime_status(server_id) in ("starting", "running", "healthy", "unhealthy")
+    if running:
+        threading.Thread(target=lambda: docker_manager.restart_server(server_id), daemon=True).start()
+    log.info("Modpack updated: db_id=%d, minecraft=%s, loader=%s, size=%d, restart=%s",
+             server_id, version, loader, len(data), running)
+    return jsonify({
+        "success": True,
+        "restarted": running,
+        "message": "Pack updated. Restarting to install it." if running else "Pack updated. It's installed when the server starts.",
+    }), 200
+
+
+# ---------------------------------------------------------------------------
 # DELETE /api/servers/<id>
 # ---------------------------------------------------------------------------
 @servers_bp.route("/servers/<int:server_id>", methods=["DELETE"])

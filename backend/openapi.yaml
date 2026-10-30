@@ -411,6 +411,40 @@ paths:
         "400": { description: Validation error }
         "409": { description: Port conflict }
 
+  /api/servers/from-pack:
+    post:
+      tags: [Servers]
+      summary: Create a server from a Modrinth modpack (.mrpack, up to 200 MB), e.g. built by Tessera Launcher
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [pack, name]
+              properties:
+                pack: { type: string, format: binary }
+                name: { type: string }
+                mem_min: { type: integer }
+                mem_max: { type: integer }
+                port: { type: integer }
+                local_only: { type: string, enum: ["true", "false"] }
+      responses: { "202": { description: "Provisioning started: { server_id }; poll /progress" }, "400": { description: Not a usable .mrpack }, "413": { description: Too big } }
+
+  /api/servers/{id}/pack:
+    put:
+      tags: [Servers]
+      summary: Replace a modpack server's pack; a running server restarts and installs it (old pack files are removed)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [pack]
+              properties: { pack: { type: string, format: binary } }
+      responses: { "200": { description: "{ success, restarted, message }" }, "400": { description: Not a modpack server, or not a usable .mrpack }, "404": { description: Server not found }, "413": { description: Too big } }
+
   /api/servers/{id}:
     get:
       tags: [Servers]
