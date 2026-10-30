@@ -1,6 +1,6 @@
 #!/bin/sh
 # CSCM uninstaller, published at https://lephor.com/cscm/uninstall.sh
-# Source: https://github.com/lephorx/CSCM/blob/main/scripts/uninstall.sh
+# Source: https://github.com/lephorx/Tessera/blob/main/scripts/uninstall.sh
 # Usage: curl -fsSL https://lephor.com/cscm/uninstall.sh | sh
 #
 # Removes what scripts/install.sh set up:

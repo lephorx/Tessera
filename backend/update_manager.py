@@ -27,7 +27,7 @@ from logger import get_logger
 
 log = get_logger("update_manager")
 
-REPO = os.getenv("CSCM_UPDATE_REPO", "lephorx/CSCM")
+REPO = os.getenv("CSCM_UPDATE_REPO", "lephorx/Tessera")
 BRANCH = os.getenv("CSCM_UPDATE_BRANCH", "main")
 LATEST_URL = os.getenv(
     "CSCM_UPDATE_URL", f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/backend/VERSION"

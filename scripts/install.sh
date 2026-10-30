@@ -4,7 +4,7 @@
 set -eu
 umask 077
 
-REPO_URL=${CSCM_REPO_URL:-https://github.com/lephorx/CSCM.git}
+REPO_URL=${CSCM_REPO_URL:-https://github.com/lephorx/Tessera.git}
 ANSWER=
 
 say() { printf '%s\n' "$*" >&2; }
