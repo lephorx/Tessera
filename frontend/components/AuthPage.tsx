@@ -3,7 +3,6 @@
 import { useState } from "react"
 import {
   Loader2,
-  Server,
   ShieldCheck,
   KeyRound,
   Copy,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { LogoMark } from "@/components/Logo"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -51,7 +51,7 @@ export function AuthStatusError({
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6 text-center">
-        <h1 className="font-semibold">CSCM is unavailable</h1>
+        <h1 className="font-semibold">Tessera is unavailable</h1>
         <ErrorMessage message={message} />
         <Button onClick={onRetry}>Retry</Button>
       </div>
@@ -434,10 +434,10 @@ export function AuthPage({
       <div className="w-full max-w-sm space-y-6">
         {/* Brand */}
         <div className="flex flex-col items-center gap-2 text-center">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
-            <Server className="size-5 text-primary" />
+          <div className="flex size-10 items-center justify-center rounded-xl bg-linear-to-br from-[#8a8aff] to-[#4b4be0] shadow-[0_4px_14px_rgb(91_91_240/0.35),inset_0_0_0_1px_rgb(255_255_255/0.18)]">
+            <LogoMark className="size-6 text-white" />
           </div>
-          <span className="text-lg font-semibold tracking-tight">CSCM</span>
+          <span className="text-lg font-extrabold tracking-tight">tessera</span>
         </div>
 
         {/* Card */}

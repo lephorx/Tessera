@@ -326,9 +326,9 @@ export function SetupWizard({ firstRun, onDone }: Props) {
         `New tunnels are created in the Playit account ${email.trim()}. Existing tunnels stay in ${oldEmail} and keep working.`
       )
     else if (!oldEmail && email.trim())
-      w.push(`CSCM creates tunnels with the Playit account ${email.trim()}.`)
+      w.push(`Tessera creates tunnels with the Playit account ${email.trim()}.`)
     if (password)
-      w.push("CSCM signs in to Playit with the new password from now on.")
+      w.push("Tessera signs in to Playit with the new password from now on.")
     if ((savedValues.PLAYIT_SUBSCRIPTION || "free") !== subscription)
       w.push(
         `Tunnels created from now on use the ${subscription === "free" ? "free" : "premium"} plan. Existing tunnels don't change.`
@@ -351,16 +351,16 @@ export function SetupWizard({ firstRun, onDone }: Props) {
     if (agentMode === "managed") {
       if (secretKey)
         w.push(
-          "CSCM restarts its Playit agent with the new SECRET_KEY. Your servers can't be reached from outside for a few seconds. If the key belongs to a different agent, existing tunnels only work again once they're assigned to it on playit.gg."
+          "Tessera restarts its Playit agent with the new SECRET_KEY. Your servers can't be reached from outside for a few seconds. If the key belongs to a different agent, existing tunnels only work again once they're assigned to it on playit.gg."
         )
       else if (agent.running && agent.source === "cscm")
         w.push(
-          "CSCM restarts its Playit agent. Your servers can't be reached from outside for a few seconds."
+          "Tessera restarts its Playit agent. Your servers can't be reached from outside for a few seconds."
         )
-      else w.push("CSCM starts its own Playit agent on this device.")
+      else w.push("Tessera starts its own Playit agent on this device.")
     } else if (agent.source === "cscm") {
       w.push(
-        "CSCM stops its own Playit agent. Keep your own agent running on this device, or nobody can reach your servers from outside."
+        "Tessera stops its own Playit agent. Keep your own agent running on this device, or nobody can reach your servers from outside."
       )
     }
     if ((savedValues.PLAYIT_AGENT ?? "") !== agentName.trim())
@@ -385,14 +385,14 @@ export function SetupWizard({ firstRun, onDone }: Props) {
       return {
         destructive: false,
         warnings: [
-          `CSCM creates DNS records on ${newDomain} for ${serverCount} with a public address. Players can then join with addresses like survival.${newDomain}; the Playit addresses keep working.${none}`,
+          `Tessera creates DNS records on ${newDomain} for ${serverCount} with a public address. Players can then join with addresses like survival.${newDomain}; the Playit addresses keep working.${none}`,
         ],
       }
     if (wasOn && !cfEnabled)
       return {
         destructive: true,
         warnings: [
-          `CSCM deletes the DNS records of ${serverCount} from ${savedDomain}. Those addresses stop working; players have to use the Playit addresses.${none}`,
+          `Tessera deletes the DNS records of ${serverCount} from ${savedDomain}. Those addresses stop working; players have to use the Playit addresses.${none}`,
         ],
       }
     if (!cfEnabled) return { destructive: false, warnings: [] }
@@ -401,17 +401,17 @@ export function SetupWizard({ firstRun, onDone }: Props) {
     if (domainChanged) {
       destructive = true
       w.push(
-        `Server addresses move from *.${savedDomain} to *.${newDomain}. CSCM creates the new records for ${serverCount} and deletes the old ones, so the old addresses stop working. Tell your players.${none}`
+        `Server addresses move from *.${savedDomain} to *.${newDomain}. Tessera creates the new records for ${serverCount} and deletes the old ones, so the old addresses stop working. Tell your players.${none}`
       )
     } else if (cfZone.trim() !== (savedValues.CLOUDFLARE_ZONE_ID ?? "")) {
       w.push(
-        `CSCM creates the records of ${serverCount} in the new zone and deletes them from the old one.${none}`
+        `Tessera creates the records of ${serverCount} in the new zone and deletes them from the old one.${none}`
       )
     }
     if (cfToken)
       w.push(
         domainChanged
-          ? "The new API token must be allowed to edit DNS in the new zone; CSCM checks this before saving."
+          ? "The new API token must be allowed to edit DNS in the new zone; Tessera checks this before saving."
           : "Only the API token changes. Existing records stay as they are."
       )
     return { destructive, warnings: w }
@@ -437,7 +437,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
   const playitFields = (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        CSCM creates the tunnels for your servers with your{" "}
+        Tessera creates the tunnels for your servers with your{" "}
         <a
           href="https://playit.gg"
           target="_blank"
@@ -520,7 +520,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
           variant={agentMode === "managed" ? "default" : "outline"}
           onClick={() => setAgentMode("managed")}
         >
-          Let CSCM run it
+          Let Tessera run it
         </Button>
         <Button
           type="button"
@@ -658,8 +658,8 @@ export function SetupWizard({ firstRun, onDone }: Props) {
 
   const envWarning = !loaded.env_writable && (
     <p className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-      CSCM can&apos;t write to <code>.env</code> in this installation. Update
-      CSCM, or add the values to <code>.env</code> by hand and run{" "}
+      Tessera can&apos;t write to <code>.env</code> in this installation. Update
+      Tessera, or add the values to <code>.env</code> by hand and run{" "}
       <code>docker compose restart api</code>.
     </p>
   )
@@ -711,7 +711,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
       <div>
         <p className="text-sm text-muted-foreground">
           {loaded.setup.mode === "local"
-            ? "CSCM is set to local network only. Saving a Playit account turns public addresses on."
+            ? "Tessera is set to local network only. Saving a Playit account turns public addresses on."
             : "Each section is saved to your installation's .env on its own."}
         </p>
         {envWarning}
@@ -796,7 +796,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
       {firstRun && (
         <>
           <p className="text-xs tracking-widest text-muted-foreground uppercase">
-            Welcome to CSCM
+            Welcome to Tessera
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">
             Finish setting up

@@ -1,0 +1,18 @@
+import { cn } from "@/lib/utils"
+
+// The Tessera mark: a cube made of three separate tiles. Drawn in
+// currentColor, so it takes the text colour of wherever it sits.
+export function LogoMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={cn("size-5", className)}
+    >
+      <path d="M12 2.6 19.8 7 12 11.4 4.2 7Z" />
+      <path d="M3.2 9.1 10.9 13.5V22L3.2 17.6Z" opacity=".55" />
+      <path d="M20.8 9.1 13.1 13.5V22l7.7-4.4Z" opacity=".8" />
+    </svg>
+  )
+}

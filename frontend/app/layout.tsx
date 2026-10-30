@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Geist_Mono, Inter, Montserrat } from "next/font/google"
 
 import "./globals.css"
@@ -15,6 +16,11 @@ const fontMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
 })
+
+export const metadata: Metadata = {
+  title: "Tessera",
+  description: "Create and manage your Minecraft servers.",
+}
 
 export default function RootLayout({
   children,

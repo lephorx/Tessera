@@ -43,7 +43,7 @@ type Phase =
   | "restarting"
   | "failed"
 
-// Permanent banner shown while a newer CSCM version exists. "Update" starts
+// Permanent banner shown while a newer Tessera version exists. "Update" starts
 // the backend's update helper, then follows its progress through the restart
 // and reloads the dashboard once the new version answers. Bumping
 // `checkRequest` asks GitHub right away (the "Check for updates" button).
@@ -75,11 +75,11 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
         setHiddenFor(null)
         if (v.update_available) {
           if (v.can_update) setPhase("confirm")
-          else toast.info(`CSCM ${v.latest} is available. ${v.reason ?? ""}`)
+          else toast.info(`Tessera ${v.latest} is available. ${v.reason ?? ""}`)
         } else if (v.check_error) {
           toast.error(v.check_error)
         } else {
-          toast.success(`CSCM is up to date (${v.current})`)
+          toast.success(`Tessera is up to date (${v.current})`)
         }
       })
       .catch(() => toast.error("Could not check for updates"))
@@ -114,7 +114,7 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
           setError(s.log[s.log.length - 1] ?? "The update failed.")
           setPhase("failed")
         } else if (s.state === "done" && s.version !== fromVersion.current) {
-          toast.success(`CSCM updated to ${s.version}`)
+          toast.success(`Tessera updated to ${s.version}`)
           window.location.reload()
         } else {
           setPhase("running")
@@ -135,7 +135,7 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
     // show progress right away; the request and the first poll take a moment
     setError("")
     fromVersion.current = info?.current ?? ""
-    setLog(["Contacting CSCM…"])
+    setLog(["Contacting Tessera…"])
     setPhase("starting")
     try {
       await api.system.update()
@@ -165,7 +165,7 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
             <p className="flex flex-1 items-center gap-2 text-sm">
               <TriangleAlert className="size-4 shrink-0" />
               <span>
-                <span className="font-medium">CSCM {info.latest}</span> is
+                <span className="font-medium">Tessera {info.latest}</span> is
                 available. You&apos;re on {info.current}.
               </span>
             </p>
@@ -215,17 +215,17 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {phase === "confirm" && `Update to CSCM ${info?.latest}`}
+              {phase === "confirm" && `Update to Tessera ${info?.latest}`}
               {(phase === "starting" || phase === "running") &&
-                "Updating CSCM…"}
-              {phase === "restarting" && "Restarting CSCM…"}
+                "Updating Tessera…"}
+              {phase === "restarting" && "Restarting Tessera…"}
               {phase === "failed" && "Update failed"}
             </DialogTitle>
           </DialogHeader>
 
           {phase === "confirm" && (
             <p className="text-sm text-muted-foreground">
-              CSCM downloads the new version from GitHub and rebuilds itself.
+              Tessera downloads the new version from GitHub and rebuilds itself.
               The dashboard is offline for a few minutes and reloads on its own
               when it&apos;s back. Your Minecraft servers keep running, and your
               settings, worlds and backups are kept.
@@ -238,7 +238,7 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="size-4 animate-spin" />
                   {phase === "restarting"
-                    ? "Waiting for CSCM to come back online…"
+                    ? "Waiting for Tessera to come back online…"
                     : "This takes a few minutes. Keep this page open."}
                 </p>
               )}

@@ -54,7 +54,7 @@ case "$(uname -s)" in
   *) fail "For Windows, use WSL 2 and follow https://lephor.com/wiki/cscm/installation" ;;
 esac
 
-say "CSCM setup ($PLATFORM)"
+say "Tessera setup ($PLATFORM)"
 INSTALL_DIR=$HOME/cscm
 WEB_PORT=3000
 DATA_DIR=$HOME/cscm-data
@@ -79,12 +79,12 @@ SERVER_DIR=$DATA_DIR/servers
 BACKUP_DIR=$DATA_DIR/backups
 DB_DIR=$DATA_DIR/data
 
-say "Downloading CSCM from ${REPO_URL}…"
-git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" || fail "Could not clone CSCM. Check the repository is public and retry."
+say "Downloading Tessera from ${REPO_URL}…"
+git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" || fail "Could not clone Tessera. Check the repository is public and retry."
 mkdir -p "$SERVER_DIR" "$BACKUP_DIR" "$DB_DIR"
 
 {
-  printf '%s\n' "# CSCM settings. Playit and Cloudflare are set up in the dashboard after you"
+  printf '%s\n' "# Tessera settings. Playit and Cloudflare are set up in the dashboard after you"
   printf '%s\n' "# create your account, or add them here and run: docker compose restart api"
   env_line WEB_PORT "$WEB_PORT"
   env_line DATA_DIR_HOST "$DB_DIR"
@@ -92,14 +92,14 @@ mkdir -p "$SERVER_DIR" "$BACKUP_DIR" "$DB_DIR"
   env_line BACKUPS_DIR_HOST "$BACKUP_DIR"
   env_line PLAYIT_HEADLESS true
   env_line JWT_LIFETIME_HOURS 8
-  env_line TOTP_ISSUER CSCM
+  env_line TOTP_ISSUER Tessera
 } > "$INSTALL_DIR/.env"
 chmod 600 "$INSTALL_DIR/.env"
 
-say "Starting CSCM…"
+say "Starting Tessera…"
 cd "$INSTALL_DIR"
 docker compose up --build -d
-say "CSCM is ready at http://localhost:$WEB_PORT"
+say "Tessera is ready at http://localhost:$WEB_PORT"
 say "Open it, create your account, then set up public access (Playit) right in the dashboard."
 say "Installation: $INSTALL_DIR"
 say "Usage guide: https://lephor.com/wiki/cscm/usage"

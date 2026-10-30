@@ -350,7 +350,7 @@ def change_password(user_id: int, current_password: str, new_password: str) -> N
 
 
 def build_totp_setup_payload(username: str, totp_secret: str) -> dict:
-    issuer = os.getenv("TOTP_ISSUER", "CSCM Tool")
+    issuer = os.getenv("TOTP_ISSUER", "Tessera")
     uri = pyotp.TOTP(totp_secret).provisioning_uri(name=username, issuer_name=issuer)
     image = qrcode.make(uri, image_factory=qrcode.image.svg.SvgImage)
     buffer = io.BytesIO()

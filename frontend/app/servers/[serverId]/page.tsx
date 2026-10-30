@@ -961,7 +961,7 @@ export default function ServerDetailPage() {
                 {setupProgress
                   ? "The Playit tunnel is being created. This takes a minute or two."
                   : !server.playit_configured
-                    ? "Playit isn't set up, so CSCM can't create a tunnel. Add your Playit account in Connection settings."
+                    ? "Playit isn't set up, so Tessera can't create a tunnel. Add your Playit account in Connection settings."
                     : (server.tunnel_error ??
                       "This server has no Playit tunnel. If it was just created, the tunnel may still be in progress.")}
                 <span className="mt-1 block text-[11px]">

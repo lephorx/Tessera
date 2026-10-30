@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutGrid, LogOut, RefreshCw, Server, Settings } from "lucide-react"
+import { LayoutGrid, LogOut, RefreshCw, Settings } from "lucide-react"
+
+import { LogoMark } from "@/components/Logo"
 
 import { Button } from "@/components/ui/button"
 import { UpdateBanner } from "@/components/UpdateBanner"
@@ -44,10 +46,10 @@ export function TopNav({ user, onLogout }: Props) {
             href="/servers"
             className="flex items-center gap-2.5 text-sm font-semibold tracking-tight transition-opacity hover:opacity-80 modern:text-[17px] modern:font-extrabold"
           >
-            <span className="modern:flex modern:size-8 modern:items-center modern:justify-center modern:rounded-[10px] modern:bg-linear-to-br modern:from-[#4f8dff] modern:to-[#1d4ed8] modern:shadow-[0_4px_14px_rgb(37_99_235/0.35),inset_0_0_0_1px_rgb(255_255_255/0.18)]">
-              <Server className="size-4 text-primary modern:size-[17px] modern:text-white" />
+            <span className="modern:flex modern:size-8 modern:items-center modern:justify-center modern:rounded-[10px] modern:bg-linear-to-br modern:from-[#8a8aff] modern:to-[#4b4be0] modern:shadow-[0_4px_14px_rgb(91_91_240/0.35),inset_0_0_0_1px_rgb(255_255_255/0.18)]">
+              <LogoMark className="size-4 text-primary modern:size-[19px] modern:text-white" />
             </span>
-            <span>CSCM</span>
+            <span>tessera</span>
           </Link>
 
           {user && (

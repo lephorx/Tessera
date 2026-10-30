@@ -13,7 +13,7 @@ async function proxy(req: NextRequest, segments: string[]) {
 
   const authHeader = req.headers.get("authorization")
   const queryToken = req.nextUrl.searchParams.get("token")
-  // The JWT from login is the one and only credential CSCM understands —
+  // The JWT from login is the one and only credential Tessera understands —
   // forward it as-is. The stream endpoint gets it via `?token=` instead of
   // a header, since EventSource can't set custom headers.
   const bearer = authHeader?.startsWith("Bearer ")
@@ -62,7 +62,7 @@ async function proxy(req: NextRequest, segments: string[]) {
     })
   } catch {
     return NextResponse.json(
-      { error: "CSCM API is unavailable" },
+      { error: "Tessera API is unavailable" },
       { status: 503 }
     )
   }

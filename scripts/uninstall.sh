@@ -65,7 +65,7 @@ is_cscm_dir() {
 
 # Print every CSCM installation found, one path per line.
 find_installs() {
-  say "Checking Docker for CSCM containers…"
+  say "Checking Docker for Tessera containers…"
   docker ps -a --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null \
     | sort -u | while IFS= read -r dir; do
       if [ -n "$dir" ] && is_cscm_dir "$dir"; then printf '%s\n' "$dir"; fi
@@ -87,17 +87,17 @@ find_installs() {
 choose_install() {
   default=
   is_cscm_dir "$HOME/cscm" && default=$HOME/cscm
-  ask "CSCM installation directory (or 's' to search this computer)" "${default:-s}"
+  ask "Tessera installation directory (or 's' to search this computer)" "${default:-s}"
   case "$ANSWER" in
     s|S|search) ;;
     *) INSTALL_DIR=${ANSWER%/}; return ;;
   esac
 
   say ""
-  say "Searching for CSCM installations. This will take a while, depending on how many"
+  say "Searching for Tessera installations. This will take a while, depending on how many"
   say "files you have. You may be asked to allow Terminal to access some folders."
   found=$(find_installs | sort -u)
-  [ -n "$found" ] || fail "No CSCM installation found. Run this again and enter its path."
+  [ -n "$found" ] || fail "No Tessera installation found. Run this again and enter its path."
 
   say ""
   say "Found:"
@@ -122,21 +122,21 @@ remove_dir() {
   }
 }
 
-command -v docker >/dev/null 2>&1 || fail "docker is required to remove the CSCM containers."
+command -v docker >/dev/null 2>&1 || fail "docker is required to remove the Tessera containers."
 docker info >/dev/null 2>&1 || fail "Start Docker first, then run this again."
 
-say "CSCM uninstall"
+say "Tessera uninstall"
 say ""
-say "Before you continue: delete your servers in the CSCM dashboard if they use"
+say "Before you continue: delete your servers in the Tessera dashboard if they use"
 say "Playit or Cloudflare. That removes their tunnels and DNS records, which this"
 say "script cannot reach."
 say ""
 
 INSTALL_DIR=
 choose_install
-safe_dir "$INSTALL_DIR" || fail "Refusing to use '$INSTALL_DIR'. Give the absolute path of the CSCM folder."
+safe_dir "$INSTALL_DIR" || fail "Refusing to use '$INSTALL_DIR'. Give the absolute path of the Tessera folder."
 is_cscm_dir "$INSTALL_DIR" \
-  || fail "$INSTALL_DIR does not look like a CSCM installation. Run this again and choose 's' to search."
+  || fail "$INSTALL_DIR does not look like a Tessera installation. Run this again and choose 's' to search."
 
 DB_DIR=
 SERVER_DIR=
@@ -153,8 +153,8 @@ MC_COUNT=$(printf '%s' "$MC_CONTAINERS" | grep -c . || true)
 
 say ""
 say "This will remove:"
-say "  - $MC_COUNT Minecraft server container(s) created by CSCM"
-say "  - the CSCM dashboard containers, network and built images"
+say "  - $MC_COUNT Minecraft server container(s) created by Tessera"
+say "  - the Tessera dashboard containers, network and built images"
 [ -n "$AGENT_CONTAINERS" ] && say "  - the Playit agent container"
 say "  - $INSTALL_DIR (code and .env with saved credentials)"
 [ -n "$SERVER_DIR$BACKUP_DIR$DB_DIR" ] && say "World data and backups are kept unless you choose to delete them next."
@@ -186,7 +186,7 @@ if [ -n "$AGENT_CONTAINERS" ]; then
   docker rm -f $AGENT_CONTAINERS >/dev/null
 fi
 
-say "Stopping CSCM…"
+say "Stopping Tessera…"
 (cd "$INSTALL_DIR" && docker compose down --rmi local --volumes --remove-orphans) \
   || say "docker compose down failed; continuing with the files."
 
@@ -212,9 +212,9 @@ say "Deleting ${INSTALL_DIR}…"
 remove_dir "$INSTALL_DIR"
 
 say ""
-say "CSCM is uninstalled."
+say "Tessera is uninstalled."
 if [ "$DELETE_DATA" = no ] && [ -n "$SERVER_DIR$BACKUP_DIR$DB_DIR" ]; then
   say "Your data is still in: $(dirname -- "${SERVER_DIR:-$DB_DIR}")"
 fi
 say "If you used a managed Playit agent, remove it at https://playit.gg/account/agents"
-say "If you added a Cloudflare API token for CSCM, you can revoke it in the Cloudflare dashboard."
+say "If you added a Cloudflare API token for Tessera, you can revoke it in the Cloudflare dashboard."

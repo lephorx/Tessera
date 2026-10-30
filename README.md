@@ -1,6 +1,6 @@
-# CSCM
+# Tessera
 
-CSCM is one web application for creating and managing Minecraft servers. The
+Tessera (formerly CSCM) is one web application for creating and managing Minecraft servers. The
 Next.js dashboard serves the UI and proxies `/api/*` requests to the Flask API.
 Docker Compose starts both processes as one stack; only the dashboard port is
 published. The API, database, Docker access, backups, and server files remain
@@ -23,12 +23,12 @@ folders and port) and starts the application. For Windows, run it from WSL 2
 with Docker Desktop integration enabled.
 
 Everything else is set up in the dashboard right after you create your account:
-local-only or public servers, your Playit account, a Playit agent that CSCM runs
+local-only or public servers, your Playit account, a Playit agent that Tessera runs
 for you (paste its `SECRET_KEY`) or one you already run, and optional Cloudflare
 custom DNS. Progress is saved as you go, and the values are written to `.env`.
 Change them later from the settings button in the top bar, or edit `.env` and run
 `docker compose restart api`. On macOS and Windows, enable Docker Desktop host
-networking before letting CSCM run the Playit agent.
+networking before letting Tessera run the Playit agent.
 
 See the [installation guide](https://lephor.com/wiki/cscm/installation) for
 platform instructions and the [usage guide](https://lephor.com/wiki/cscm/usage)
