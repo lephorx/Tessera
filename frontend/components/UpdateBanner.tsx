@@ -65,7 +65,8 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
     }
   }, [])
 
-  // Manual check: skip the hourly cache and say what was found.
+  // Manual check: skip the hourly cache and say what was found. A found
+  // update just brings the banner back; updating stays one click on it.
   useEffect(() => {
     if (!checkRequest) return
     api.system
@@ -73,14 +74,9 @@ export function UpdateBanner({ checkRequest = 0 }: { checkRequest?: number }) {
       .then((v: VersionInfo) => {
         setInfo(v)
         setHiddenFor(null)
-        if (v.update_available) {
-          if (v.can_update) setPhase("confirm")
-          else toast.info(`Tessera ${v.latest} is available. ${v.reason ?? ""}`)
-        } else if (v.check_error) {
-          toast.error(v.check_error)
-        } else {
-          toast.success(`Tessera is up to date (${v.current})`)
-        }
+        if (v.update_available) return
+        if (v.check_error) toast.error(v.check_error)
+        else toast.success(`Tessera is up to date (${v.current})`)
       })
       .catch(() => toast.error("Could not check for updates"))
   }, [checkRequest])
