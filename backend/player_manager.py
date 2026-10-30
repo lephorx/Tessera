@@ -442,12 +442,25 @@ def get_player_history(server_id: int) -> list[dict]:
 
 # ── NBT helpers ───────────────────────────────────────────────────────────────
 
+# 26.1 moved the per-player folders under world/players/ (playerdata became
+# players/data). A world with that folder is only read from there; older
+# worlds keep them at the world root.
+_PLAYERS_SUBDIR = {"playerdata": "data", "stats": "stats", "advancements": "advancements"}
+
+
+def _player_file(server_id: int, folder: str, filename: str) -> Path:
+    world = Path(server_data_dir(server_id)) / "world"
+    if (world / "players").is_dir():
+        return world / "players" / _PLAYERS_SUBDIR[folder] / filename
+    return world / folder / filename
+
+
 def _player_dat(server_id: int, uuid: str) -> Path:
-    return Path(server_data_dir(server_id)) / "world" / "playerdata" / f"{uuid}.dat"
+    return _player_file(server_id, "playerdata", f"{uuid}.dat")
 
 
 def _player_dat_old(server_id: int, uuid: str) -> Path:
-    return Path(server_data_dir(server_id)) / "world" / "playerdata" / f"{uuid}.dat_old"
+    return _player_file(server_id, "playerdata", f"{uuid}.dat_old")
 
 
 def _lookup_uuid(server_id: int, username: str) -> str | None:
@@ -897,7 +910,7 @@ def get_player_statistics(server_id: int, username: str) -> dict:
             "message": f"Player '{username}' not found in usercache.json — they must have joined at least once",
         }
 
-    stats_path = Path(server_data_dir(server_id)) / "world" / "stats" / f"{uuid}.json"
+    stats_path = _player_file(server_id, "stats", f"{uuid}.json")
     if not stats_path.exists():
         return {"success": False, "message": f"Statistics file not found (UUID: {uuid})"}
 
@@ -969,8 +982,8 @@ def delete_player_data(server_id: int, username: str, targets: list[str]) -> dic
 
     dat_path = _player_dat(server_id, uuid)
     dat_old_path = _player_dat_old(server_id, uuid)
-    stats_path = Path(server_data_dir(server_id)) / "world" / "stats" / f"{uuid}.json"
-    advancements_path = Path(server_data_dir(server_id)) / "world" / "advancements" / f"{uuid}.json"
+    stats_path = _player_file(server_id, "stats", f"{uuid}.json")
+    advancements_path = _player_file(server_id, "advancements", f"{uuid}.json")
 
     needs_nbt_edit = bool(normalized & {"xp", "inventory", "enderchest"})
     if needs_nbt_edit:
