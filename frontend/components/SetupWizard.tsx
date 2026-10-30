@@ -244,6 +244,11 @@ export function SetupWizard({ firstRun, onDone }: Props) {
     after: () => void | Promise<void> = () => goTo("cloudflare")
   ) =>
     run(async () => {
+      // tunnels are created on this agent; without a name Playit may pick another one
+      if (!agentName.trim())
+        throw new Error(
+          "Enter the agent's name, as it's shown on playit.gg under Agents."
+        )
       if (agentMode === "managed") {
         if (!secretKey && !loaded?.secrets_set.PLAYIT_SECRET_KEY)
           throw new Error("Paste the agent's SECRET_KEY.")
@@ -508,6 +513,23 @@ export function SetupWizard({ firstRun, onDone }: Props) {
     </div>
   )
 
+  const agentNameField = (
+    <div className="space-y-1.5">
+      <Label htmlFor="playit-agent">Agent name</Label>
+      <Input
+        id="playit-agent"
+        placeholder="e.g. tessera-home"
+        required
+        value={agentName}
+        onChange={(e) => setAgentName(e.target.value)}
+      />
+      <p className="text-xs text-muted-foreground">
+        The name shown on playit.gg under Agents. Tessera creates your
+        servers&apos; tunnels on this agent.
+      </p>
+    </div>
+  )
+
   const agentFields = (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -548,6 +570,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
               .
             </li>
             <li>Copy its SECRET_KEY and paste it below.</li>
+            <li>Enter the name you gave the agent.</li>
           </ol>
           <div className="space-y-1.5">
             <Label htmlFor="playit-secret">Agent SECRET_KEY</Label>
@@ -565,6 +588,7 @@ export function SetupWizard({ firstRun, onDone }: Props) {
               {savedHint(loaded.secrets_set.PLAYIT_SECRET_KEY)}
             </p>
           </div>
+          {agentNameField}
           <p className="text-xs text-muted-foreground">
             On macOS and Windows, first enable{" "}
             <strong>
@@ -574,18 +598,12 @@ export function SetupWizard({ firstRun, onDone }: Props) {
           </p>
         </>
       ) : (
-        <div className="space-y-1.5">
-          <Label htmlFor="playit-agent">Agent name (optional)</Label>
-          <Input
-            id="playit-agent"
-            placeholder="First available agent"
-            value={agentName}
-            onChange={(e) => setAgentName(e.target.value)}
-          />
+        <>
+          {agentNameField}
           <p className="text-xs text-muted-foreground">
             Keep that agent running on this device.
           </p>
-        </div>
+        </>
       )}
     </div>
   )
