@@ -66,7 +66,7 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-background">
       <TopNav user={user} onLogout={logout} />
-      <main className="enter mx-auto w-full max-w-xl px-6 py-8">
+      <main className="page-content enter mx-auto w-full max-w-xl px-6 py-8 [--page-name:page-settings]">
         <Link
           href="/servers"
           className="mb-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground modern:mb-3 modern:text-[13px] modern:font-medium modern:text-tint modern:hover:text-tint/80"

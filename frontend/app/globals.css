@@ -534,18 +534,6 @@ html[data-design="modern"].dark {
         border-color: rgb(255 255 255 / 0.16);
     }
 
-    /* switching tabs: the new panel comes in from the side you moved
-       towards; on first load it just rises */
-    [data-slot="tabs-content"][data-state="active"] {
-        animation: cscm-rise-sm var(--dur) var(--ease-out) backwards;
-    }
-    [data-slot="tabs"][data-direction="forward"] > [data-slot="tabs-content"][data-state="active"] {
-        animation: cscm-from-right var(--dur-slow) var(--ease-out) backwards;
-    }
-    [data-slot="tabs"][data-direction="back"] > [data-slot="tabs-content"][data-state="active"] {
-        animation: cscm-from-left var(--dur-slow) var(--ease-out) backwards;
-    }
-
     /* loading placeholders */
     .skeleton {
         border-radius: 6px;
@@ -559,6 +547,30 @@ html[data-design="modern"].dark {
     }
 }
 
+/* without view transitions, a new tab panel at least slides in */
+@supports not (view-transition-name: none) {
+    [data-design="modern"] {
+        [data-slot="tabs"][data-direction="forward"] > [data-slot="tabs-content"][data-state="active"] {
+            animation: cscm-from-right var(--dur-slow) var(--ease-out) backwards;
+        }
+        [data-slot="tabs"][data-direction="back"] > [data-slot="tabs-content"][data-state="active"] {
+            animation: cscm-from-left var(--dur-slow) var(--ease-out) backwards;
+        }
+    }
+}
+
+/* once a page transition has run, pages stop playing their own entrance
+   on top of it; content that arrives later just fades in */
+[data-design="modern"][data-entered] {
+    .enter {
+        animation: none;
+    }
+    .stagger > * {
+        animation: cscm-fade var(--dur) var(--ease-out) backwards;
+        animation-delay: 0ms;
+    }
+}
+
 @layer base {
     /* everything clickable eases its colors instead of snapping */
     [data-design="modern"] :where(a, button, [role="button"], [role="tab"], label, summary, input, select, textarea, tr, li) {
@@ -568,26 +580,84 @@ html[data-design="modern"].dark {
     }
 }
 
-/* View transitions: switching the design cross-fades; moving between
-   pages fades the old page out quickly and lets the new one come in with
-   its own entrance (.enter / .stagger). The nav bar is named, so it stays
-   put instead of fading with the page. */
+/* ── View transitions ────────────────────────────────────────────────────
+   Switching the design cross-fades the whole page. Moving between pages
+   and tabs only moves what changed: the page content (`page-content`,
+   each page its own name) or the open tab's panel (`tab-panel`). The rest
+   swaps instantly underneath, so nothing ghosts. Clicks always go
+   through to the page, so quick clicking never feels stuck. */
+::view-transition {
+    pointer-events: none;
+}
 ::view-transition-old(root),
 ::view-transition-new(root) {
     animation-duration: 320ms;
     animation-timing-function: var(--ease-standard, ease);
 }
-[data-design="modern"][data-navigating] {
-    &::view-transition-old(root) {
-        animation: 140ms var(--ease-standard) both cscm-page-out;
-    }
+/* names only while their own kind of transition runs */
+[data-design="modern"][data-navigating] .page-content {
+    view-transition-name: var(--page-name, page);
+    view-transition-class: page;
+}
+[data-design="modern"][data-tab-switch] [data-slot="tabs-content"][data-state="active"] {
+    view-transition-name: tab-panel;
+}
+[data-design="modern"]:is([data-navigating], [data-tab-switch]) {
+    &::view-transition-old(root),
     &::view-transition-new(root) {
-        animation: 200ms var(--ease-out) both cscm-fade;
-    }
-    &::view-transition-group(site-nav) {
-        animation-duration: 260ms;
+        animation: none;
     }
 }
-@keyframes cscm-page-out {
-    to { opacity: 0; scale: 0.99; }
+
+/* pages: the old one leaves quickly, the new one settles in */
+[data-design="modern"][data-navigating] {
+    /* the old page is gone before the new one is really there, so the
+       two never sit half-visible on top of each other */
+    &::view-transition-old(*.page) {
+        animation: 140ms cubic-bezier(0.2, 0, 0, 1) both var(--page-out, cscm-out-across);
+    }
+    &::view-transition-new(*.page) {
+        animation: 440ms var(--ease-out) 80ms both var(--page-in, cscm-in-across);
+    }
 }
+[data-design="modern"][data-navigating="forward"] {
+    --page-out: cscm-out-left;
+    --page-in: cscm-in-right;
+}
+[data-design="modern"][data-navigating="back"] {
+    --page-out: cscm-out-right;
+    --page-in: cscm-in-left;
+}
+
+/* tabs: the open panel slides towards where you're going */
+[data-design="modern"][data-tab-switch] {
+    &::view-transition-group(tab-panel) {
+        animation-duration: 380ms;
+        animation-timing-function: var(--ease-out);
+    }
+    &::view-transition-old(tab-panel) {
+        animation: 120ms cubic-bezier(0.2, 0, 0, 1) both var(--panel-out, cscm-out-across);
+    }
+    &::view-transition-new(tab-panel) {
+        animation: 360ms var(--ease-out) 70ms both var(--panel-in, cscm-in-across);
+    }
+}
+[data-design="modern"][data-tab-switch="forward"] {
+    --panel-out: cscm-out-left-sm;
+    --panel-in: cscm-in-right-sm;
+}
+[data-design="modern"][data-tab-switch="back"] {
+    --panel-out: cscm-out-right-sm;
+    --panel-in: cscm-in-left-sm;
+}
+
+@keyframes cscm-out-left { to { opacity: 0; translate: -32px 0; } }
+@keyframes cscm-out-right { to { opacity: 0; translate: 32px 0; } }
+@keyframes cscm-in-right { from { opacity: 0; translate: 48px 0; } }
+@keyframes cscm-in-left { from { opacity: 0; translate: -48px 0; } }
+@keyframes cscm-out-left-sm { to { opacity: 0; translate: -18px 0; } }
+@keyframes cscm-out-right-sm { to { opacity: 0; translate: 18px 0; } }
+@keyframes cscm-in-right-sm { from { opacity: 0; translate: 28px 0; } }
+@keyframes cscm-in-left-sm { from { opacity: 0; translate: -28px 0; } }
+@keyframes cscm-out-across { to { opacity: 0; scale: 0.985; } }
+@keyframes cscm-in-across { from { opacity: 0; translate: 0 12px; } }

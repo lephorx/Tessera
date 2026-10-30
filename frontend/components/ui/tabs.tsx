@@ -1,10 +1,14 @@
 "use client"
 
 import * as React from "react"
+import { flushSync } from "react-dom"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Tabs as TabsPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// the latest tab switch; an older one finishing must not end a newer one
+let tabSwitchId = 0
 
 function Tabs({
   className,
@@ -33,6 +37,28 @@ function Tabs({
             : to > from
               ? "forward"
               : "back"
+      }
+
+      // modern: the open panel slides out and the new one in, through a
+      // view transition (see globals.css). Only for controlled tabs that
+      // render the change right away.
+      const html = document.documentElement
+      if (
+        onValueChange &&
+        root?.dataset.direction !== "none" &&
+        html.dataset.design === "modern" &&
+        document.startViewTransition &&
+        !matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        const id = ++tabSwitchId
+        html.dataset.tabSwitch = root?.dataset.direction ?? "across"
+        const transition = document.startViewTransition(() =>
+          flushSync(() => onValueChange(next))
+        )
+        transition.finished.finally(() => {
+          if (id === tabSwitchId) delete html.dataset.tabSwitch
+        })
+        return
       }
       onValueChange?.(next)
     },

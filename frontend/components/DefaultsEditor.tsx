@@ -205,7 +205,7 @@ export function DefaultsEditor({ user, onLogout, onClose }: Props) {
     <div className="min-h-screen bg-background">
       <TopNav user={user} onLogout={onLogout} />
 
-      <main className="enter mx-auto max-w-screen-xl px-6 py-8">
+      <main className="page-content enter mx-auto max-w-screen-xl px-6 py-8 [--page-name:page-defaults]">
         {/* modern: a back link above the title, like every other page */}
         <button
           type="button"

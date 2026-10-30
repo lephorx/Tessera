@@ -1,12 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import {
-  useParams,
-  useRouter,
-  useSearchParams,
-  notFound,
-} from "next/navigation"
+import { useParams, useSearchParams, notFound } from "next/navigation"
 import Link from "next/link"
 import {
   Activity,
@@ -77,6 +72,10 @@ import type { Server, ServerProgress, ServerStats as Stats } from "@/lib/types"
 const POLL_INTERVAL = 5000
 const FAST_POLL_INTERVAL = 1500
 
+// Servers seen in this visit, so reopening one shows it straight away
+// (then refreshes) instead of the loading skeleton.
+const seen = new Map<number, { server: Server; stats: Stats | null }>()
+
 export default function ServerDetailPage() {
   const params = useParams()
   const serverId = Number(params?.serverId)
@@ -92,9 +91,16 @@ export default function ServerDetailPage() {
     logout,
   } = useAuth()
 
-  const [server, setServer] = useState<Server | null>(null)
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [loadingServer, setLoadingServer] = useState(true)
+  const [server, setServer] = useState<Server | null>(
+    () => seen.get(serverId)?.server ?? null
+  )
+  const [stats, setStats] = useState<Stats | null>(
+    () => seen.get(serverId)?.stats ?? null
+  )
+  const [loadingServer, setLoadingServer] = useState(() => !seen.has(serverId))
+  useEffect(() => {
+    if (server && server.id === serverId) seen.set(serverId, { server, stats })
+  }, [server, stats, serverId])
   const [loadingAction, setLoadingAction] = useState<
     "start" | "stop" | "restart" | "kill" | null
   >(null)
@@ -140,7 +146,6 @@ export default function ServerDetailPage() {
   const [recreateStep, setRecreateStep] = useState("")
   const [recreateBackup, setRecreateBackup] = useState(true)
 
-  const router = useRouter()
   const searchParams = useSearchParams()
   const VALID_TABS = [
     "console",
@@ -153,14 +158,19 @@ export default function ServerDetailPage() {
   ] as const
   type Tab = (typeof VALID_TABS)[number]
   const rawTab = searchParams.get("tab") ?? ""
-  const activeTab: Tab = (VALID_TABS as readonly string[]).includes(rawTab)
-    ? (rawTab as Tab)
-    : "console"
+  // kept here (not read back from the URL) so a switch renders right away,
+  // inside the tab transition; the URL follows along
+  const [activeTab, setActiveTab] = useState<Tab>(() =>
+    (VALID_TABS as readonly string[]).includes(rawTab)
+      ? (rawTab as Tab)
+      : "console"
+  )
 
   function setTab(tab: Tab) {
-    const params = new URLSearchParams(searchParams.toString())
+    setActiveTab(tab)
+    const params = new URLSearchParams(window.location.search)
     params.set("tab", tab)
-    router.replace(`?${params.toString()}`, { scroll: false })
+    window.history.replaceState(null, "", `?${params.toString()}`)
   }
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -556,7 +566,10 @@ export default function ServerDetailPage() {
         {/* modern: the page's shape while the server loads */}
         <div className="hidden min-h-screen bg-background modern:block">
           <TopNav user={user} onLogout={logout} />
-          <div aria-hidden className="mx-auto w-full max-w-screen-xl px-6 py-8">
+          <div
+            aria-hidden
+            className="page-content mx-auto w-full max-w-screen-xl px-6 py-8 [--page-name:page-server]"
+          >
             <div className="skeleton mb-5 h-4 w-24" />
             <div className="flex items-center gap-4">
               <div className="skeleton size-16 rounded-[15px]" />
@@ -660,7 +673,7 @@ export default function ServerDetailPage() {
       )}
 
       <main
-        className="enter mx-auto w-full max-w-screen-xl flex-1 px-6 py-8"
+        className="page-content enter mx-auto w-full max-w-screen-xl flex-1 px-6 py-8 [--page-name:page-server]"
         inert={pageBusy || undefined}
       >
         {/* Breadcrumb + header */}

@@ -4,12 +4,19 @@ import { useEffect, useRef } from "react"
 import { usePathname, useRouter } from "next/navigation"
 
 /**
- * Modern design: moving between pages (servers, a server, settings)
- * cross-fades through the View Transitions API instead of cutting. Plain
- * link clicks are caught before Next's Link handles them, and the
- * transition waits until the new page is on screen. Anything unusual
- * (new tab, modifier keys, other sites, same page) is left alone.
+ * Modern design: moving between pages animates through the View
+ * Transitions API. Only the page content moves (each page's <main> is
+ * tagged `page-content`), the nav bar stays. Going deeper (a server, new
+ * server, defaults) slides in from the right, going back from the left,
+ * and moving sideways (servers / settings) fades up. Plain link clicks are
+ * caught before Next's Link handles them, and the transition waits until
+ * the new page is on screen. Anything unusual (new tab, modifier keys,
+ * other sites, same page) is left alone.
  */
+
+/** how deep a page sits: /servers 1, /servers/12 2 */
+const depth = (path: string) => path.split("/").filter(Boolean).length
+
 // set while <PageTransitions> is mounted; see navigate()
 let transitionTo: ((href: string) => boolean) | null = null
 
@@ -45,7 +52,12 @@ export function PageTransitions() {
         // never hold the page frozen if something goes wrong
         setTimeout(resolve, 1200)
       })
-      root.dataset.navigating = "true"
+      const from = depth(location.pathname)
+      const to = depth(url.pathname)
+      root.dataset.navigating =
+        to > from ? "forward" : to < from ? "back" : "across"
+      // from now on pages don't play their own entrance on top of this one
+      root.dataset.entered = "true"
       const transition = document.startViewTransition(() => {
         router.push(url.pathname + url.search + url.hash)
         return ready

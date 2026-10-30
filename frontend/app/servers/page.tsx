@@ -30,6 +30,17 @@ const FAST_POLL_INTERVAL = 1500
 // how long a deleted server's card stays at 100% before it's removed
 const FINISH_MS = 900
 
+type Setup = { completed: boolean; public_available: boolean }
+
+// The last dashboard seen in this visit, so coming back to it shows the
+// servers straight away (then refreshes) instead of loading from scratch.
+let cache: {
+  userId: number
+  servers: Server[]
+  stats: Record<number, ServerStats>
+  setup: Setup | null
+} | null = null
+
 export default function DashboardPage() {
   const {
     loading: authLoading,
@@ -42,21 +53,28 @@ export default function DashboardPage() {
     logout,
   } = useAuth()
 
-  const [servers, setServers] = useState<Server[]>([])
-  const [statsMap, setStatsMap] = useState<Record<number, ServerStats>>({})
-  const [loading, setLoading] = useState(true)
+  const cached = cache && user && cache.userId === user.id ? cache : null
+  const [servers, setServers] = useState<Server[]>(cached?.servers ?? [])
+  const [statsMap, setStatsMap] = useState<Record<number, ServerStats>>(
+    cached?.stats ?? {}
+  )
+  const [loading, setLoading] = useState(!cached)
   // null until loaded; the wizard runs after account creation until finished
-  const [setup, setSetup] = useState<{
-    completed: boolean
-    public_available: boolean
-  } | null>(null)
+  const [setup, setSetupState] = useState<Setup | null>(cached?.setup ?? null)
+
+  // keep the cache in step with what's on screen
+  const userId = user?.id
+  useEffect(() => {
+    if (userId == null || loading) return
+    cache = { userId, servers, stats: statsMap, setup }
+  }, [userId, loading, servers, statsMap, setup])
 
   const loadSetup = useCallback(async () => {
     try {
-      setSetup(await api.setup.get())
+      setSetupState(await api.setup.get())
     } catch {
       // older API without setup support: behave as before
-      setSetup({ completed: true, public_available: true })
+      setSetupState({ completed: true, public_available: true })
     }
   }, [])
 
@@ -231,7 +249,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background">
       <TopNav user={user} onLogout={logout} />
 
-      <main className="mx-auto max-w-screen-xl px-6 py-8 modern:pt-10">
+      <main className="page-content mx-auto max-w-screen-xl px-6 py-8 [--page-name:page-servers] modern:pt-10">
         {/* Page header */}
         <div className="enter mb-8 flex items-center justify-between modern:mb-7 modern:items-end">
           <div>
