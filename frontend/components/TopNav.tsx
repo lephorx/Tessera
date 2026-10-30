@@ -137,7 +137,7 @@ export function TopNav({ user, onLogout }: Props) {
               </Button>
             )}
             {!user && !onLogout && (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground modern:hidden">
                 Minecraft Server Manager
               </span>
             )}
