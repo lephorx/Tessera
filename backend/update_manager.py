@@ -15,6 +15,7 @@ API reads it back. ``.env``, the database and world data are never touched.
 from __future__ import annotations
 
 import os
+import re
 import socket
 import threading
 import time
@@ -111,6 +112,16 @@ def _own_container():
     return docker_manager._get_client().containers.get(socket.gethostname())
 
 
+def host_path(path: str) -> str:
+    """A path as the Docker daemon sees it: Windows paths (Docker Desktop) become
+    /run/desktop/mnt/host/c/…, everything else stays."""
+    m = re.match(r"^([A-Za-z]):[\\/](.*)$", path)
+    if not m:
+        return path
+    rest = m.group(2).replace("\\", "/").strip("/")
+    return f"/run/desktop/mnt/host/{m.group(1).lower()}/{rest}"
+
+
 def install_info() -> tuple[dict | None, str | None]:
     """Return ({project, working_dir, data_dir}, None) or (None, reason)."""
     try:
@@ -199,7 +210,9 @@ def _run_helper(info: dict) -> None:
         repo, _, tag = UPDATER_IMAGE.partition(":")
         client.images.pull(repo, tag=tag or "latest")
 
-    wd = info["working_dir"]
+    # Docker Desktop on Windows names the folder C:\Users\…; the helper talks to the Linux
+    # VM's daemon, which sees Windows drives under /run/desktop/mnt/host/<drive>.
+    wd = host_path(info["working_dir"])
     client.containers.run(
         UPDATER_IMAGE,
         ["sh", "-c", UPDATE_SCRIPT],
