@@ -38,6 +38,7 @@ export function ServerCreationProgress({ task, onDismiss }: Props) {
           size="sm"
           variant="ghost"
           className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+          aria-label="Dismiss"
           onClick={onDismiss}
         >
           <X className="size-3" />

@@ -253,6 +253,7 @@ function NameList({
         <Input
           className="h-8 font-mono text-xs"
           placeholder="Minecraft name"
+          aria-label="Minecraft name"
           value={name}
           maxLength={16}
           onChange={(e) => setName(e.target.value)}
@@ -299,6 +300,7 @@ function BanForm({
       <Input
         className="h-8 w-40 font-mono text-xs"
         placeholder="Minecraft name"
+        aria-label="Minecraft name to ban"
         value={name}
         maxLength={16}
         onChange={(e) => setName(e.target.value)}
@@ -306,6 +308,7 @@ function BanForm({
       <Input
         className="h-8 min-w-40 flex-1 text-xs"
         placeholder="Reason (optional)"
+        aria-label="Ban reason (optional)"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
       />

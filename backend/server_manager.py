@@ -46,6 +46,9 @@ load_dotenv()
 log = get_logger("server_manager")
 
 
+EULA_REQUIRED_MESSAGE = "Accept the Minecraft EULA to create a server: https://aka.ms/MinecraftEULA"
+
+
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return slug or "server"
@@ -152,12 +155,16 @@ def _create_server_record(
     mem_max: int,
     local_only: bool = False,
     owner_id: int | None = None,
+    eula_accepted: bool = False,
 ) -> dict:
     """Step 1: insert the DB row and return {server_id, subdomain} or an error dict.
 
     owner_id is None for servers created via the CLI; those belong to the
-    first admin.
+    first admin. eula_accepted must be True: the caller confirmed the user
+    accepted the Minecraft EULA (https://aka.ms/MinecraftEULA).
     """
+    if not eula_accepted:
+        return {"success": False, "message": EULA_REQUIRED_MESSAGE, "eula_required": True}
     if server_type not in SERVER_TYPES:
         return {
             "success": False,
@@ -174,10 +181,10 @@ def _create_server_record(
             cur = conn.execute(
                 "INSERT INTO servers"
                 " (name, slug, type, version, loader_version, serverport, mem_min_gb, mem_max_gb, rcon_password, status,"
-                " local_only, owner_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning', ?, ?)",
+                " local_only, owner_id, eula_accepted_at, eula_accepted_by)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning', ?, ?, datetime('now'), ?)",
                 (server_name, subdomain, server_type, version, loader_version,
-                 server_port, mem_min, mem_max, rcon_password, int(local_only), owner_id),
+                 server_port, mem_min, mem_max, rcon_password, int(local_only), owner_id, owner_id),
             )
             db_server_id = cur.lastrowid
         log.info("Server record persisted: db_id=%d", db_server_id)
@@ -327,13 +334,15 @@ def provision_server(
     subscription: str | None = None,
     agent: str | None = None,
     local_only: bool = False,
+    eula_accepted: bool = False,
 ) -> dict:
     """Synchronous wrapper used by the CLI (main.py).  The HTTP API route
     calls _create_server_record + _provision_resources directly so it can
     return a 202 with server_id before the slow steps complete.
     """
     record = _create_server_record(server_name, server_type, version, loader_version,
-                                    server_port, mem_min, mem_max, local_only)
+                                    server_port, mem_min, mem_max, local_only,
+                                    eula_accepted=eula_accepted)
     if not record["success"]:
         return record
     return _provision_resources(record["server_id"], record["subdomain"],

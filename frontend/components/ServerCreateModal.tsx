@@ -62,6 +62,8 @@ const BLOCKED_PORTS = new Set([
 const JAVA_TYPES = ["paper", "forge", "fabric", "vanilla", "purpur"]
 const DEFAULT_JAVA_VERSION = "1.21.4"
 const DEFAULT_BEDROCK_VERSION = "LATEST"
+const EULA_URL = "https://aka.ms/MinecraftEULA"
+const MS_PRIVACY_URL = "https://go.microsoft.com/fwlink/?LinkId=521839"
 
 // The same form works as a dialog or as the /servers/new page.
 function Frame({
@@ -180,6 +182,8 @@ export function ServerCreateModal({
   const [errors, setErrors] = useState<Partial<typeof form>>({})
   const [props, setProps] = useState<{ key: string; value: string }[]>([])
   const [showProps, setShowProps] = useState(false)
+  // The Minecraft EULA must be accepted by the user for every new server
+  const [eulaAccepted, setEulaAccepted] = useState(false)
   const portDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function resetForm() {
@@ -199,6 +203,7 @@ export function ServerCreateModal({
     setPortRefresh((n) => n + 1)
     setProps([])
     setShowProps(false)
+    setEulaAccepted(false)
   }
 
   // Bedrock has its own defaults (no manifest-based version, no JVM heap).
@@ -358,6 +363,10 @@ export function ServerCreateModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!eulaAccepted) {
+      toast.error(`Accept the Minecraft EULA to create a server: ${EULA_URL}`)
+      return
+    }
     const validationErrors = validate()
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors)
@@ -372,6 +381,7 @@ export function ServerCreateModal({
         if (k) propsObj[k] = p.value
       }
       const payload: CreateServerPayload = {
+        eula: true,
         name: form.name.trim(),
         type: form.type,
         version: form.version.trim(),
@@ -666,9 +676,11 @@ export function ServerCreateModal({
                 reach this host (same LAN/machine), not a public address. */}
           <div className="flex items-start gap-2.5 rounded-md border border-border p-3">
             <button
+              id="srv-local-only"
               type="button"
               role="checkbox"
               aria-checked={form.local_only}
+              aria-describedby="srv-local-only-desc"
               disabled={submitting || !publicAvailable}
               onClick={() =>
                 setForm((prev) => ({
@@ -694,19 +706,18 @@ export function ServerCreateModal({
                 </svg>
               )}
             </button>
-            <div
-              className="cursor-pointer select-none"
-              onClick={() =>
-                !submitting &&
-                publicAvailable &&
-                setForm((prev) => ({
-                  ...prev,
-                  local_only: !prev.local_only,
-                }))
-              }
-            >
-              <p className="text-sm font-medium">Local Only</p>
-              <p className="text-xs text-muted-foreground">
+            {/* clicking the label toggles the checkbox button above */}
+            <div className="select-none">
+              <label
+                htmlFor="srv-local-only"
+                className="block cursor-pointer text-sm font-medium"
+              >
+                Local Only
+              </label>
+              <p
+                id="srv-local-only-desc"
+                className="text-xs text-muted-foreground"
+              >
                 Skip the public tunnel and DNS setup — the server is only
                 reachable on your local network, via this machine&apos;s own IP
                 address and the port above.
@@ -789,6 +800,7 @@ export function ServerCreateModal({
                   <div key={i} className="flex gap-1.5">
                     <Input
                       className="h-7 flex-1 font-mono text-xs"
+                      aria-label={`Property ${i + 1} key`}
                       placeholder="key (e.g. motd)"
                       value={p.key}
                       onChange={(e) =>
@@ -802,6 +814,7 @@ export function ServerCreateModal({
                     />
                     <Input
                       className="h-7 flex-1 text-xs"
+                      aria-label={`Property ${i + 1} value`}
                       placeholder="value"
                       value={p.value}
                       onChange={(e) =>
@@ -818,6 +831,7 @@ export function ServerCreateModal({
                       size="sm"
                       variant="ghost"
                       className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+                      aria-label={`Remove property ${p.key || i + 1}`}
                       onClick={() =>
                         setProps((prev) => prev.filter((_, idx) => idx !== i))
                       }
@@ -844,6 +858,56 @@ export function ServerCreateModal({
             )}
           </div>
 
+          {/* Minecraft EULA — required, never pre-checked */}
+          <div className="flex items-start gap-2.5 rounded-md border border-border p-3">
+            <input
+              id="srv-eula"
+              type="checkbox"
+              required
+              checked={eulaAccepted}
+              onChange={(e) => setEulaAccepted(e.target.checked)}
+              disabled={submitting}
+              className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary disabled:cursor-not-allowed"
+            />
+            <div className="text-sm">
+              <label htmlFor="srv-eula" className="cursor-pointer font-medium">
+                I accept the Minecraft EULA
+              </label>{" "}
+              <span className="text-xs text-muted-foreground">
+                (
+                <a
+                  href={EULA_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-4 hover:text-foreground"
+                >
+                  Minecraft EULA
+                </a>
+                {form.type === "bedrock" && (
+                  <>
+                    {", "}
+                    <a
+                      href={MS_PRIVACY_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-4 hover:text-foreground"
+                    >
+                      Microsoft Privacy Policy
+                    </a>
+                  </>
+                )}
+                )
+              </span>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {form.type === "bedrock"
+                  ? "The Bedrock server software is licensed under the Minecraft EULA and the Microsoft Privacy Policy. "
+                  : ""}
+                Tessera tells the server you accepted it; it can&apos;t start
+                without that.
+              </p>
+            </div>
+          </div>
+
           <FrameFooter page={asPage} className="gap-2 pt-2">
             <Button
               type="button"
@@ -857,6 +921,7 @@ export function ServerCreateModal({
               type="submit"
               disabled={
                 submitting ||
+                !eulaAccepted ||
                 portStatus === "taken" ||
                 portStatus === "reserved" ||
                 portStatus === "invalid"

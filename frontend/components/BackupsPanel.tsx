@@ -191,6 +191,7 @@ export function BackupsPanel({ serverId }: Props) {
               disabled={creating}
               onChange={(e) => setCreateType(e.target.value as BackupType)}
               title="Backup type"
+              aria-label="Backup type"
             >
               <option value="zip">zip</option>
               <option value="zfs">zfs</option>
@@ -250,6 +251,7 @@ export function BackupsPanel({ serverId }: Props) {
                         ? "ZFS snapshots cannot be downloaded"
                         : "Download backup"
                     }
+                    aria-label={`Download backup ${b.filename}`}
                     onClick={() => handleDownload(b)}
                   >
                     {downloadingId === b.id ? (
@@ -277,6 +279,8 @@ export function BackupsPanel({ serverId }: Props) {
                     variant="ghost"
                     className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10"
                     disabled={busyId === b.id}
+                    aria-label={`Delete backup ${b.filename}`}
+                    title="Delete backup"
                     onClick={() => setDeleteTarget(b)}
                   >
                     <Trash2 className="size-3" />

@@ -13,6 +13,7 @@ import { CloudPanel } from "@/components/CloudPanel"
 import { AccountPanel } from "@/components/AccountPanel"
 import { PlayerListsPanel } from "@/components/PlayerListsPanel"
 import { DesignPanel } from "@/components/DesignPanel"
+import { AboutPanel } from "@/components/AboutPanel"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/hooks/useAuth"
 import { api } from "@/lib/api"
@@ -24,6 +25,7 @@ type Tab =
   | "players"
   | "account"
   | "appearance"
+  | "about"
 const TABS: Tab[] = [
   "connection",
   "users",
@@ -31,8 +33,9 @@ const TABS: Tab[] = [
   "players",
   "account",
   "appearance",
+  "about",
 ]
-const MEMBER_TABS: Tab[] = ["players", "account", "appearance"]
+const MEMBER_TABS: Tab[] = ["players", "account", "appearance", "about"]
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -120,7 +123,7 @@ export default function SettingsPage() {
         >
           <TabsList
             variant="line"
-            className="mb-6 w-full justify-start border-b border-border pb-0"
+            className="mb-6 w-full justify-start overflow-x-auto border-b border-border pb-0"
           >
             {isAdmin && (
               <>
@@ -134,6 +137,7 @@ export default function SettingsPage() {
             <TabsTrigger value="players">Players</TabsTrigger>
             <TabsTrigger value="account">Account</TabsTrigger>
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
+            <TabsTrigger value="about">About &amp; privacy</TabsTrigger>
           </TabsList>
           {isAdmin && (
             <>
@@ -161,6 +165,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="appearance">
             <DesignPanel />
+          </TabsContent>
+          <TabsContent value="about">
+            <AboutPanel admin={isAdmin} />
           </TabsContent>
         </Tabs>
       </main>

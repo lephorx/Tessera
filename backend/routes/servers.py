@@ -17,6 +17,7 @@ from db import get_db
 from docker_manager import MODPACK_FILE, SERVER_TYPES, server_data_dir
 from logger import get_logger
 from server_manager import (
+    EULA_REQUIRED_MESSAGE,
     active_progress,
     _create_server_record,
     _provision_resources,
@@ -32,6 +33,17 @@ from server_manager import (
 log = get_logger("api")
 
 servers_bp = Blueprint("servers", __name__, url_prefix="/api")
+
+
+def _eula_accepted(value) -> bool:
+    """True only for an explicit yes: JSON true, or "true"/"1"/"on" from a form."""
+    if isinstance(value, bool):
+        return value
+    return isinstance(value, str) and value.strip().lower() in ("true", "1", "on", "yes")
+
+
+def _eula_error():
+    return jsonify({"error": EULA_REQUIRED_MESSAGE, "eula_required": True}), 400
 
 
 def _server_exists(server_id: int) -> bool:
@@ -167,6 +179,9 @@ def get_server_detail(server_id: int):
 # POST /api/servers
 #
 # Request body (JSON):
+#   eula      bool    required  Must be true: the user accepts the Minecraft EULA
+#                               (https://aka.ms/MinecraftEULA; for Bedrock also the
+#                               Microsoft Privacy Policy). Otherwise 400.
 #   name      string  required  Server display name.
 #   type      string  optional  paper|forge|fabric|vanilla|purpur|bedrock
 #                               Default: paper
@@ -198,6 +213,11 @@ def create_server():
         return auth_err
 
     body = request.get_json(silent=True) or {}
+
+    # The Minecraft EULA (and for Bedrock, the Bedrock server license and
+    # Microsoft Privacy Policy) must be accepted by the user, not by us.
+    if not _eula_accepted(body.get("eula")):
+        return _eula_error()
 
     name = body.get("name", "").strip()
     if not name:
@@ -246,7 +266,8 @@ def create_server():
 
     # Step 1 (synchronous): create DB record → get server_id immediately
     record = _create_server_record(name, server_type, version, loader_version,
-                                    port, mem_min, mem_max, local_only, owner_id=g.current_user["id"])
+                                    port, mem_min, mem_max, local_only, owner_id=g.current_user["id"],
+                                    eula_accepted=True)
     if not record["success"]:
         log.error("Server creation record failed: %s", record.get("message"))
         return jsonify(record), 409 if record.get("conflict") else 400
@@ -273,7 +294,8 @@ def create_server():
 
 # ---------------------------------------------------------------------------
 # POST /api/servers/from-pack — multipart: "pack" (.mrpack file), "name",
-#   "mem_min", "mem_max" (GB), optional "port", "local_only" ("true"/"false")
+#   "mem_min", "mem_max" (GB), "eula" ("true", required), optional "port",
+#   "local_only" ("true"/"false")
 # Tessera Launcher builds the .mrpack from an instance; the itzg image installs
 # its loader, Minecraft version and server-side files when the server starts.
 # ---------------------------------------------------------------------------
@@ -301,6 +323,9 @@ def create_server_from_pack():
     auth_err = authorize()
     if auth_err:
         return auth_err
+
+    if not _eula_accepted(request.form.get("eula")):
+        return _eula_error()
 
     upload = request.files.get("pack")
     if upload is None:
@@ -334,7 +359,7 @@ def create_server_from_pack():
 
     log.info("Modpack server requested: name=%s, minecraft=%s, loader=%s, size=%d", name, version, loader, len(data))
     record = _create_server_record(name, "modpack", version, loader, port, mem_min, mem_max, local_only,
-                                   owner_id=g.current_user["id"])
+                                   owner_id=g.current_user["id"], eula_accepted=True)
     if not record["success"]:
         return jsonify(record), 409 if record.get("conflict") else 400
     server_id = record["server_id"]

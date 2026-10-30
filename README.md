@@ -1,5 +1,8 @@
 # Tessera
 
+> Tessera is not an official Minecraft product. Not approved by or associated
+> with Mojang or Microsoft.
+
 Tessera (formerly CSCM) is one web application for creating and managing Minecraft servers. The
 Next.js dashboard serves the UI and proxies `/api/*` requests to the Flask API.
 Docker Compose starts both processes as one stack; only the dashboard port is
@@ -66,6 +69,55 @@ a short-lived helper container runs `git pull --ff-only` and
 `docker compose up --build -d` for this installation. `.env` and all data stay
 untouched. To publish an update, bump `backend/VERSION` on `main`. Manual
 update and troubleshooting: https://lephor.com/wiki/cscm/help
+
+To turn the automatic check off, set `CSCM_UPDATE_CHECK=0` in `.env` (then
+`docker compose restart api`) or use the switch under **Settings > About &
+privacy**. "Check for updates" in the top bar still works when it's off.
+
+## Minecraft EULA
+
+Every new server needs the Minecraft EULA (https://aka.ms/MinecraftEULA)
+accepted by the person creating it: the dashboard shows an unchecked checkbox,
+and the API (`POST /api/servers`, `POST /api/servers/from-pack`) rejects
+requests without `"eula": true` with a 400. Tessera only passes `EULA=TRUE` to
+the server container after that, and stores when and by whom it was accepted.
+Bedrock Dedicated Server also falls under the Microsoft Privacy Policy
+(https://go.microsoft.com/fwlink/?LinkId=521839). Servers created before this
+check count as accepted. The CLI (`backend/main.py`) needs `--accept-eula`.
+
+## Privacy
+
+Tessera is self-hosted: your data stays on the machine it runs on, and whoever
+runs the installation is responsible for it. Nothing is sent to the Tessera
+developers. Stored locally: user accounts (username, hashed password, 2FA
+secret), server settings, worlds and backups, player names and UUIDs on player
+lists, and logs (dashboard request logs and Minecraft server logs contain IP
+addresses).
+
+Outbound connections:
+
+- `raw.githubusercontent.com`: update check about once an hour (can be turned
+  off, see above); updating runs `git pull` and rebuilds the Docker images.
+- Mojang API (`api.mojang.com`): player UUID lookups for player lists.
+- From the browser: player heads from `mc-heads.net`, item icons from
+  `minecraft.wiki`, and the version list from `launchermeta.mojang.com`.
+- Fabric/Forge loader version lists (`meta.fabricmc.net`,
+  `maven.minecraftforge.net`, `files.minecraftforge.net`), fetched by the
+  dashboard server for the version picker.
+- Docker Hub: the `itzg` server images, which download the server software
+  when a server starts.
+- Playit.gg, only if set up; Cloudflare, only if set up.
+- Tessera Cloud, only if this machine is linked
+  ([privacy](https://tesseralauncher.com/privacy),
+  [terms](https://tesseralauncher.com/terms)).
+
+The dashboard shows the same under **Settings > About & privacy** and at
+`/about`.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party software, fonts and images are listed
+in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Move an existing installation
 

@@ -60,6 +60,11 @@ components:
           type: string
           enum: [not_created, stopped, starting, healthy, unhealthy, running]
         created_at: { type: string }
+        eula_accepted_at:
+          type: string
+          nullable: true
+          description: When the Minecraft EULA was accepted (servers from before this field use their creation time).
+        eula_accepted_by: { type: integer, nullable: true, description: User who accepted the EULA }
         tunnels:
           type: array
           items:
@@ -356,14 +361,24 @@ paths:
         Bedrock has no SRV-based port discovery — players must be given the
         connect address and port directly. loader_version and mem_min are
         ignored for bedrock (no loader, no JVM).
+
+        `eula` must be `true`: the user accepts the Minecraft EULA
+        (https://aka.ms/MinecraftEULA) and, for Bedrock, the Microsoft Privacy
+        Policy (https://go.microsoft.com/fwlink/?LinkId=521839). Without it the
+        request fails with 400 and `eula_required: true`. The acceptance time and
+        user are stored on the server (`eula_accepted_at`, `eula_accepted_by`).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name]
+              required: [name, eula]
               properties:
+                eula:
+                  type: boolean
+                  enum: [true]
+                  description: The user accepts the Minecraft EULA (https://aka.ms/MinecraftEULA).
                 name: { type: string }
                 type:
                   {
@@ -408,7 +423,7 @@ paths:
                   additionalProperties: { type: string }
       responses:
         "202": { description: "Provisioning started (poll GET /api/servers/<id>/progress)" }
-        "400": { description: Validation error }
+        "400": { description: "Validation error, or the Minecraft EULA wasn't accepted (eula_required: true)" }
         "409": { description: Port conflict }
 
   /api/servers/from-pack:
@@ -421,15 +436,19 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [pack, name]
+              required: [pack, name, eula]
               properties:
                 pack: { type: string, format: binary }
                 name: { type: string }
+                eula:
+                  type: string
+                  enum: ["true"]
+                  description: The user accepts the Minecraft EULA (https://aka.ms/MinecraftEULA); otherwise 400 with eula_required.
                 mem_min: { type: integer }
                 mem_max: { type: integer }
                 port: { type: integer }
                 local_only: { type: string, enum: ["true", "false"] }
-      responses: { "202": { description: "Provisioning started: { server_id }; poll /progress" }, "400": { description: Not a usable .mrpack }, "413": { description: Too big } }
+      responses: { "202": { description: "Provisioning started: { server_id }; poll /progress" }, "400": { description: "Not a usable .mrpack, or the Minecraft EULA wasn't accepted" }, "413": { description: Too big } }
 
   /api/servers/{id}/pack:
     put:

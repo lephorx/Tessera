@@ -35,6 +35,7 @@ function PropInput({
     return (
       <select
         className={INPUT_BASE}
+        aria-label={def.label}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
@@ -48,6 +49,7 @@ function PropInput({
     return (
       <select
         className={INPUT_BASE}
+        aria-label={def.label}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
@@ -64,6 +66,7 @@ function PropInput({
     <input
       type={def.type === "number" ? "number" : "text"}
       className={INPUT_BASE}
+      aria-label={def.label}
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}

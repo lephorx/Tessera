@@ -239,6 +239,7 @@ export function AppearancePanel({
             type="file"
             accept="image/*"
             className="hidden"
+            aria-label="Server icon image"
             onChange={(e) => {
               const file = e.target.files?.[0]
               if (file) uploadIcon(file)

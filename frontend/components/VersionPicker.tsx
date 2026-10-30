@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useId } from "react"
 import { Search, ChevronDown, Check, Loader2 } from "lucide-react"
 import { api } from "@/lib/api"
 
@@ -40,6 +40,7 @@ export function VersionPicker({
   const [loadingLoaderItems, setLoadingLoaderItems] = useState(false)
   const [search, setSearch] = useState("")
   const [showAll, setShowAll] = useState(false)
+  const showAllId = useId()
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -213,6 +214,11 @@ export function VersionPicker({
                   ? "Search loader versions..."
                   : "Search game versions..."
               }
+              aria-label={
+                mode === "loader"
+                  ? "Search loader versions"
+                  : "Search game versions"
+              }
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>
@@ -254,6 +260,7 @@ export function VersionPicker({
           {(mode !== "loader" || isFabric) && (
             <div className="flex items-center gap-2.5 border-t border-border px-3 py-2.5">
               <button
+                id={showAllId}
                 type="button"
                 role="checkbox"
                 aria-checked={showAll}
@@ -276,12 +283,13 @@ export function VersionPicker({
                   </svg>
                 )}
               </button>
-              <span
+              {/* clicking the label toggles the checkbox button */}
+              <label
+                htmlFor={showAllId}
                 className="cursor-pointer text-sm text-foreground select-none"
-                onClick={() => setShowAll((s) => !s)}
               >
                 {isFabric ? "Show unstable builds" : "Show all versions"}
-              </span>
+              </label>
             </div>
           )}
         </div>

@@ -32,6 +32,7 @@ def version():
         "can_update": reason is None,
         "reason": reason,
         "check_error": error,
+        "update_check": update_manager.update_check_enabled(),
     })
 
 

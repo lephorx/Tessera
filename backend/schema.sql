@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS servers (
     -- user who owns the server (NULL = the first admin); non-admins only
     -- see and manage their own servers
     owner_id      INTEGER,
+    -- when (and by which user) the Minecraft EULA was accepted for this server;
+    -- servers from before this column count as accepted at creation time
+    eula_accepted_at TEXT,
+    eula_accepted_by INTEGER,
     createdat     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

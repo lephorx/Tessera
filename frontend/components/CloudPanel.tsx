@@ -87,6 +87,29 @@ export function CloudPanel() {
             Launcher. It connects out to the cloud, so no ports need to be
             opened. Everything keeps working here without it.
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Once linked, this machine&apos;s name and the requests made from the
+            cloud dashboard or launcher (and their responses) pass through
+            Tessera Cloud. See its{" "}
+            <a
+              href="https://tesseralauncher.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              privacy policy
+            </a>{" "}
+            and{" "}
+            <a
+              href="https://tesseralauncher.com/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              terms
+            </a>
+            .
+          </p>
         </div>
 
         {status.linked ? (

@@ -92,6 +92,7 @@ export function PropertiesPanel({ serverId }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter properties…"
+            aria-label="Filter properties"
             className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
           />
         </div>
@@ -137,6 +138,7 @@ export function PropertiesPanel({ serverId }: Props) {
                     {key}
                   </span>
                   <Input
+                    aria-label={key}
                     className={`h-8 flex-1 font-mono text-xs ${isDirty ? "border-primary" : ""}`}
                     value={values[key]}
                     onChange={(e) =>

@@ -14,7 +14,10 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import Link from "next/link"
+
 import { LogoMark } from "@/components/Logo"
+import { MOJANG_DISCLAIMER } from "@/components/AboutPanel"
 import { TopNav } from "@/components/TopNav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -424,10 +427,7 @@ function LoginForm({ onLoginSuccess }: LoginFormProps) {
 // Main AuthPage
 // ---------------------------------------------------------------------------
 
-export function AuthPage({
-  initialView,
-  onLoginSuccess,
-}: Props) {
+export function AuthPage({ initialView, onLoginSuccess }: Props) {
   const [view, setView] = useState<View>(initialView)
   const [totpData, setTotpData] = useState<{
     setup_token: string
@@ -484,7 +484,9 @@ export function AuthPage({
             <div className="flex size-10 items-center justify-center rounded-xl bg-linear-to-br from-[#8a8aff] to-[#4b4be0] shadow-[0_4px_14px_rgb(91_91_240/0.35),inset_0_0_0_1px_rgb(255_255_255/0.18)]">
               <LogoMark className="size-6 text-white" />
             </div>
-            <span className="text-lg font-extrabold tracking-tight">tessera</span>
+            <span className="text-lg font-extrabold tracking-tight">
+              tessera
+            </span>
           </div>
 
           {/* Card */}
@@ -527,6 +529,14 @@ export function AuthPage({
               <LoginForm onLoginSuccess={onLoginSuccess} />
             )}
           </div>
+
+          {/* classic; modern shows this in the footer */}
+          <p className="text-center text-xs text-muted-foreground modern:hidden">
+            {MOJANG_DISCLAIMER}{" "}
+            <Link href="/about" className="underline underline-offset-4">
+              About &amp; privacy
+            </Link>
+          </p>
         </div>
       </main>
 
@@ -538,6 +548,12 @@ export function AuthPage({
             tessera
           </span>
           <span>Self-hosted Minecraft server manager</span>
+          <span className="max-w-md text-center text-xs">
+            {MOJANG_DISCLAIMER}
+          </span>
+          <Link href="/about" className="text-xs underline underline-offset-4">
+            About &amp; privacy
+          </Link>
         </div>
       </footer>
     </div>

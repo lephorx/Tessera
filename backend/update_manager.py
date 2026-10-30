@@ -35,6 +35,16 @@ LATEST_URL = os.getenv(
 )
 CHECK_INTERVAL = 60 * 60  # seconds between GitHub checks
 
+
+def update_check_enabled() -> bool:
+    """False when CSCM_UPDATE_CHECK is 0/false/off: no automatic GitHub checks.
+
+    Read on every call, so the dashboard toggle (which writes .env and the
+    process environment) applies right away. "Check for updates" still asks
+    GitHub when clicked.
+    """
+    return os.getenv("CSCM_UPDATE_CHECK", "1").strip().lower() not in ("0", "false", "no", "off")
+
 UPDATER_NAME = "cscm-updater"
 UPDATER_IMAGE = os.getenv("CSCM_UPDATER_IMAGE", "docker:cli")
 DATA_DIR = Path(os.getenv("DB_PATH", "/app/data/cscm.db")).parent
@@ -92,8 +102,14 @@ def is_newer(latest: str, current: str) -> bool:
 
 
 def latest_version(force: bool = False) -> tuple[str | None, str | None]:
-    """Return (latest_version, error), asking GitHub at most once an hour."""
+    """Return (latest_version, error), asking GitHub at most once an hour.
+
+    With the automatic check turned off only a forced (user-requested) check
+    goes out; otherwise the last result, if any, is returned.
+    """
     with _cache_lock:
+        if not force and not update_check_enabled():
+            return _cache["latest"], None
         if not force and time.time() - _cache["checked_at"] < CHECK_INTERVAL:
             return _cache["latest"], _cache["error"]
         try:

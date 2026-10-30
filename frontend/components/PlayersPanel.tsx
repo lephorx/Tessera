@@ -134,6 +134,7 @@ function AddRow({
       <Input
         className="h-8 flex-1 text-xs"
         placeholder={placeholder}
+        aria-label={placeholder}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         disabled={disabled || submitting}
@@ -297,8 +298,24 @@ const McItem = memo(
     const clickable = !!onRemove && !!item
     return (
       <div
-        className={`group relative flex size-9 items-center justify-center border border-[#373737] bg-[#8b8b8b]/10 select-none ${clickable ? "cursor-pointer hover:border-zinc-400 hover:bg-zinc-800" : ""}`}
+        className={`group relative flex size-9 items-center justify-center border border-[#373737] bg-[#8b8b8b]/10 select-none ${clickable ? "cursor-pointer outline-none hover:border-zinc-400 hover:bg-zinc-800 focus-visible:border-zinc-300 focus-visible:ring-2 focus-visible:ring-ring" : ""}`}
         onClick={clickable ? onRemove : undefined}
+        // keyboard: a removable slot acts as a button
+        role={clickable ? "button" : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        aria-label={
+          clickable && item ? `Remove ${item.count} ${item.id}` : undefined
+        }
+        onKeyDown={
+          clickable
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  onRemove?.()
+                }
+              }
+            : undefined
+        }
         title={item ? `${item.id} ×${item.count}` : undefined}
       >
         {item && (
@@ -320,7 +337,7 @@ const McItem = memo(
               {item.count}
             </span>
             {clickable && (
-              <span className="absolute inset-0 hidden items-center justify-center bg-red-900/50 group-hover:flex">
+              <span className="absolute inset-0 hidden items-center justify-center bg-red-900/50 group-hover:flex group-focus-visible:flex">
                 <Trash2 className="size-3 text-red-300" />
               </span>
             )}
@@ -400,6 +417,7 @@ function AddItemForm({
       <Input
         className="h-7 flex-1 font-mono text-xs"
         placeholder="diamond  or  mod:item_id"
+        aria-label="Item ID"
         value={itemId}
         onChange={(e) => setItemId(e.target.value)}
         disabled={disabled || adding}
@@ -409,6 +427,7 @@ function AddItemForm({
         type="number"
         min={1}
         max={64}
+        aria-label="Item count"
         value={count}
         onChange={(e) => setCount(e.target.value)}
         disabled={disabled || adding}
@@ -784,6 +803,7 @@ function PlayerDetailDialog({
                 <Input
                   className="h-7 min-w-0 flex-1 font-mono text-xs"
                   placeholder="speed"
+                  aria-label="Effect ID"
                   value={effectId}
                   onChange={(e) => setEffectId(e.target.value)}
                   disabled={!isRunning || !!pending}
@@ -794,6 +814,7 @@ function PlayerDetailDialog({
                   min={1}
                   max={3600}
                   placeholder="30s"
+                  aria-label="Effect duration in seconds"
                   value={effectSeconds}
                   onChange={(e) => setEffectSeconds(e.target.value)}
                   disabled={!isRunning || !!pending}
@@ -804,6 +825,7 @@ function PlayerDetailDialog({
                   min={0}
                   max={255}
                   placeholder="lvl"
+                  aria-label="Effect level"
                   value={effectAmplifier}
                   onChange={(e) => setEffectAmplifier(e.target.value)}
                   disabled={!isRunning || !!pending}
@@ -924,6 +946,8 @@ function PlayerDetailDialog({
                   variant="ghost"
                   className="h-6 px-2 text-xs"
                   disabled={positionLoading}
+                  aria-label="Refresh position"
+                  title="Refresh position"
                   onClick={loadPosition}
                 >
                   {positionLoading ? (
@@ -946,18 +970,21 @@ function PlayerDetailDialog({
                 <Input
                   className="h-7 w-[4.5rem] font-mono text-xs"
                   placeholder="X"
+                  aria-label="X coordinate"
                   value={tpX}
                   onChange={(e) => setTpX(e.target.value)}
                 />
                 <Input
                   className="h-7 w-[4.5rem] font-mono text-xs"
                   placeholder="Y"
+                  aria-label="Y coordinate"
                   value={tpY}
                   onChange={(e) => setTpY(e.target.value)}
                 />
                 <Input
                   className="h-7 w-[4.5rem] font-mono text-xs"
                   placeholder="Z"
+                  aria-label="Z coordinate"
                   value={tpZ}
                   onChange={(e) => setTpZ(e.target.value)}
                 />

@@ -54,6 +54,13 @@ def _migrate_schema() -> None:
                 conn.execute("UPDATE servers SET owner_id = (SELECT MIN(id) FROM users) WHERE owner_id IS NULL")
             except sqlite3.OperationalError:
                 pass
+        if "eula_accepted_at" not in server_cols:
+            conn.execute("ALTER TABLE servers ADD COLUMN eula_accepted_at TEXT")
+            # servers from before explicit acceptance were already running with
+            # EULA=TRUE; treat them as accepted when they were created
+            conn.execute("UPDATE servers SET eula_accepted_at = createdat WHERE eula_accepted_at IS NULL")
+        if "eula_accepted_by" not in server_cols:
+            conn.execute("ALTER TABLE servers ADD COLUMN eula_accepted_by INTEGER")
 
 
 def fetch_server(server_id: int) -> sqlite3.Row | None:

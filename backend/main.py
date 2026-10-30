@@ -6,8 +6,8 @@ Delegates to server_manager.provision_server().  Useful for quick testing
 without running the full Flask API.
 
 Usage:
-    python main.py
-    python main.py --name "Survival SMP" --type forge --version 1.20.1 --port 25570
+    python main.py --accept-eula
+    python main.py --accept-eula --name "Survival SMP" --type forge --version 1.20.1 --port 25570
     python main.py --help
 """
 
@@ -30,7 +30,13 @@ def main() -> None:
     parser.add_argument("--mem-min", type=int, default=2,               help="Minimum JVM heap (GB)")
     parser.add_argument("--mem-max", type=int, default=4,               help="Maximum JVM heap (GB)")
     parser.add_argument("--local-only", action="store_true",            help="Skip the PlayIT tunnel — LAN/same-network access only")
+    parser.add_argument("--accept-eula", action="store_true",
+                        help="Accept the Minecraft EULA (https://aka.ms/MinecraftEULA); required")
     args = parser.parse_args()
+
+    if not args.accept_eula:
+        parser.error("Accept the Minecraft EULA to create a server: https://aka.ms/MinecraftEULA "
+                     "(pass --accept-eula)")
 
     log.info(
         "Starting server provisioning: name=%s, type=%s, version=%s, port=%d, local_only=%s",
@@ -45,6 +51,7 @@ def main() -> None:
         mem_min=args.mem_min,
         mem_max=args.mem_max,
         local_only=args.local_only,
+        eula_accepted=True,
     )
 
     if result["success"]:

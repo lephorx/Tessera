@@ -123,6 +123,8 @@ export interface FileListResponse {
 }
 
 export interface CreateServerPayload {
+  /** the user accepted the Minecraft EULA (required by the API) */
+  eula: true
   name: string
   type?: string
   version?: string
