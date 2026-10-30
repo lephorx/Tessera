@@ -38,6 +38,9 @@ async function proxy(req: NextRequest, segments: string[]) {
 
   const headers = new Headers()
   if (bearer) headers.set("Authorization", bearer)
+  // the visitor's address, for the API's rate limits (backend/rate_limit.py)
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip")
+  if (clientIp) headers.set("X-Tessera-Client-IP", clientIp)
 
   if (!isFormData) {
     const ct = req.headers.get("content-type")

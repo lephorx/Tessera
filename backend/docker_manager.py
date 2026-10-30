@@ -60,7 +60,13 @@ JAVA_TYPES = {
     "fabric":  "FABRIC",
     "vanilla": "VANILLA",
     "purpur":  "PURPUR",
+    # A Modrinth .mrpack (from Tessera Launcher): the image installs the pack's loader,
+    # Minecraft version and server-side files itself.
+    "modpack": "MODRINTH",
 }
+
+# Where a modpack server's .mrpack lives, inside the server's /data.
+MODPACK_FILE = ".tessera/pack.mrpack"
 
 # Public API type(s) served by the separate itzg/minecraft-bedrock-server image.
 BEDROCK_TYPES = {"bedrock"}
@@ -149,12 +155,16 @@ def _create_java_container(row) -> str:
     env = {
         "EULA": "TRUE",
         "TYPE": itzg_type,
-        "VERSION": row["version"],
         "INIT_MEMORY": f"{row['mem_min_gb']}G",
         "MAX_MEMORY": f"{row['mem_max_gb']}G",
         "ENABLE_RCON": "true",
         "RCON_PASSWORD": row["rcon_password"],
     }
+    if row["type"] == "modpack":
+        # version and loader come from the pack; client-only files are skipped by the image
+        env["MODRINTH_MODPACK"] = f"/data/{MODPACK_FILE}"
+    else:
+        env["VERSION"] = row["version"]
     loader_version = dict(row).get("loader_version") or None
     if loader_version:
         stype = row["type"].lower()

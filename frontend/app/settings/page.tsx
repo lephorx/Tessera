@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, Loader2 } from "lucide-react"
@@ -9,14 +9,29 @@ import { TopNav } from "@/components/TopNav"
 import { AuthPage, AuthStatusError } from "@/components/AuthPage"
 import { SetupWizard } from "@/components/SetupWizard"
 import { UsersPanel } from "@/components/UsersPanel"
+import { CloudPanel } from "@/components/CloudPanel"
 import { AccountPanel } from "@/components/AccountPanel"
 import { PlayerListsPanel } from "@/components/PlayerListsPanel"
 import { DesignPanel } from "@/components/DesignPanel"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/hooks/useAuth"
+import { api } from "@/lib/api"
 
-type Tab = "connection" | "users" | "players" | "account" | "appearance"
-const TABS: Tab[] = ["connection", "users", "players", "account", "appearance"]
+type Tab =
+  | "connection"
+  | "users"
+  | "cloud"
+  | "players"
+  | "account"
+  | "appearance"
+const TABS: Tab[] = [
+  "connection",
+  "users",
+  "cloud",
+  "players",
+  "account",
+  "appearance",
+]
 const MEMBER_TABS: Tab[] = ["players", "account", "appearance"]
 
 export default function SettingsPage() {
@@ -38,6 +53,17 @@ export default function SettingsPage() {
       new URLSearchParams(window.location.search).get("tab")
     return TABS.includes(wanted as Tab) ? (wanted as Tab) : "connection"
   })
+  // The Cloud tab only shows once a Tessera Cloud is set up (TESSERA_CLOUD_URL)
+  // or this machine is already linked to one.
+  const [cloudAvailable, setCloudAvailable] = useState(false)
+  const admin = !!user?.is_admin
+  useEffect(() => {
+    if (!admin) return
+    api.cloud
+      .status()
+      .then((s) => setCloudAvailable(s.linked || !!s.cloud_url))
+      .catch(() => {})
+  }, [admin])
 
   if (loading) {
     return (
@@ -61,7 +87,9 @@ export default function SettingsPage() {
   // connection settings and users are for admins; everyone has the players
   // and account tabs
   const isAdmin = !!user?.is_admin
-  const current: Tab = isAdmin || MEMBER_TABS.includes(tab) ? tab : "players"
+  const allowed = (t: Tab) =>
+    (isAdmin || MEMBER_TABS.includes(t)) && (t !== "cloud" || cloudAvailable)
+  const current: Tab = allowed(tab) ? tab : isAdmin ? "connection" : "players"
 
   return (
     <div className="min-h-screen bg-background">
@@ -98,6 +126,9 @@ export default function SettingsPage() {
               <>
                 <TabsTrigger value="connection">Connection</TabsTrigger>
                 <TabsTrigger value="users">Users</TabsTrigger>
+                {cloudAvailable && (
+                  <TabsTrigger value="cloud">Cloud</TabsTrigger>
+                )}
               </>
             )}
             <TabsTrigger value="players">Players</TabsTrigger>
@@ -115,6 +146,11 @@ export default function SettingsPage() {
               <TabsContent value="users">
                 <UsersPanel />
               </TabsContent>
+              {cloudAvailable && (
+                <TabsContent value="cloud">
+                  <CloudPanel />
+                </TabsContent>
+              )}
             </>
           )}
           <TabsContent value="players">

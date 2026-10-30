@@ -13,6 +13,8 @@ from flask import Flask, g, jsonify, request
 from dotenv import load_dotenv
 
 import backup_manager
+import cloud_connector
+import rate_limit
 import server_manager
 import update_manager
 from auth_helpers import authorize, extract_bearer_token
@@ -29,6 +31,7 @@ from auth_manager import (
 from db import get_db, init_schema
 from logger import get_logger, configure as configure_log
 from routes.backups import backups_bp
+from routes.cloud import cloud_bp
 from routes.console import console_bp
 from routes.files import files_bp
 from routes.players import players_bp
@@ -79,6 +82,26 @@ app.register_blueprint(backups_bp)
 app.register_blueprint(system_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(users_bp)
+app.register_blueprint(cloud_bp)
+
+# optional Tessera Cloud link: reconnects if this machine was paired
+cloud_connector.init(app)
+
+
+@app.before_request
+def _rate_limit():
+    """Per-address limits (rate_limit.py). Requests relayed by Tessera Cloud are limited
+    per user there, so they skip this."""
+    if request.method == "OPTIONS" or not request.path.startswith("/api/") or request.remote_addr == "tessera-cloud":
+        return None
+    ip = rate_limit.client_ip()
+    if request.path in rate_limit.AUTH_PATHS and request.method == "POST":
+        if not rate_limit.auth_limiter.take(ip):
+            log.warning("Rate limited sign-in: path=%s ip=%s", request.path, ip)
+            return jsonify({"error": "Too many attempts. Wait a minute and try again."}), 429, {"Retry-After": "60"}
+    elif not rate_limit.api_limiter.take(ip):
+        return jsonify({"error": "Too many requests. Slow down a little."}), 429, {"Retry-After": "60"}
+    return None
 
 
 @app.before_request

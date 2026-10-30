@@ -256,6 +256,54 @@ paths:
               properties: { current_password: { type: string }, new_password: { type: string, minLength: 12 } }
       responses: { "200": { description: Changed }, "403": { description: Current password wrong } }
 
+  /api/cloud:
+    get:
+      tags: [Cloud]
+      summary: Tessera Cloud link state (admin; never callable through the cloud)
+      responses: { "200": { description: "{ linked, connected, cloud_url, machine_id, paired_at, last_error, allow_remote_admin, pairing: { code, expires_at, error } | null }" } }
+    delete:
+      tags: [Cloud]
+      summary: Disconnect from the cloud and forget the machine credential
+      responses: { "200": { description: Link state } }
+
+  /api/cloud/pair:
+    post:
+      tags: [Cloud]
+      summary: Start pairing; returns a code to enter in the Tessera account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { cloud_url: { type: string, description: "Defaults to TESSERA_CLOUD_URL" } }
+      responses: { "200": { description: Link state with pairing.code }, "409": { description: Already connected }, "502": { description: Cloud unreachable } }
+
+  /api/cloud/pair/cancel:
+    post:
+      tags: [Cloud]
+      summary: Stop waiting for the pairing code
+      responses: { "200": { description: Link state } }
+
+  /api/cloud/settings:
+    put:
+      tags: [Cloud]
+      summary: Allow cloud admins to change settings, users and update CSCM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allow_remote_admin]
+              properties: { allow_remote_admin: { type: boolean } }
+      responses: { "200": { description: Link state } }
+
+  /api/cloud/audit:
+    get:
+      tags: [Cloud]
+      summary: The last 200 requests that came through the cloud
+      responses: { "200": { description: "{ entries: [{ at, username, method, path, status }] }" } }
+
   /api/server-types:
     get:
       tags: [Servers]

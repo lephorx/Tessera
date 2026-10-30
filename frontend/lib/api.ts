@@ -23,6 +23,25 @@ function getStoredToken(): string | null {
   return localStorage.getItem(JWT_KEY)
 }
 
+export interface CloudStatus {
+  linked: boolean
+  connected: boolean
+  cloud_url: string | null
+  machine_id: string | null
+  paired_at: string | null
+  last_error: string | null
+  allow_remote_admin: boolean
+  pairing: { code: string; expires_at: number; error: string | null } | null
+}
+
+export interface CloudAuditEntry {
+  at: string
+  username: string | null
+  method: string
+  path: string
+  status: number
+}
+
 export interface PlayerLists {
   whitelist: string[]
   ops: string[]
@@ -108,6 +127,26 @@ export const api = {
         failed: string[]
         domain: string | null
       }>,
+  },
+  /** Tessera Cloud link (admin, local only) */
+  cloud: {
+    status: () => apiCall("/cloud") as Promise<CloudStatus>,
+    pair: (cloudUrl: string) =>
+      apiCall("/cloud/pair", {
+        method: "POST",
+        body: JSON.stringify({ cloud_url: cloudUrl }),
+      }) as Promise<CloudStatus>,
+    cancelPairing: () =>
+      apiCall("/cloud/pair/cancel", { method: "POST" }) as Promise<CloudStatus>,
+    disconnect: () =>
+      apiCall("/cloud", { method: "DELETE" }) as Promise<CloudStatus>,
+    setRemoteAdmin: (allowed: boolean) =>
+      apiCall("/cloud/settings", {
+        method: "PUT",
+        body: JSON.stringify({ allow_remote_admin: allowed }),
+      }) as Promise<CloudStatus>,
+    audit: () =>
+      apiCall("/cloud/audit") as Promise<{ entries: CloudAuditEntry[] }>,
   },
   users: {
     list: () => apiCall("/users"),

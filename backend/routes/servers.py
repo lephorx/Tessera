@@ -1,5 +1,6 @@
 """Server CRUD, lifecycle, console command, stats, logs, and networking routes."""
 
+import os
 import sqlite3
 import threading
 
@@ -13,7 +14,7 @@ from cloudflare_manager import cloudflare_enabled
 from auth_helpers import authorize, require_admin
 import auth_manager
 from db import get_db
-from docker_manager import SERVER_TYPES
+from docker_manager import MODPACK_FILE, SERVER_TYPES, server_data_dir
 from logger import get_logger
 from server_manager import (
     active_progress,
@@ -60,7 +61,8 @@ def get_server_types():
     auth_err = authorize()
     if auth_err:
         return auth_err
-    return jsonify({"server_types": list(SERVER_TYPES.keys())})
+    # "modpack" servers are created by uploading a pack (POST /servers/from-pack)
+    return jsonify({"server_types": [t for t in SERVER_TYPES if t != "modpack"]})
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +204,8 @@ def create_server():
         return jsonify({"error": "'name' is required"}), 400
 
     server_type = body.get("type", "paper").lower()
+    if server_type == "modpack":
+        return jsonify({"error": "Modpack servers are created by uploading the pack to /api/servers/from-pack"}), 400
     if server_type not in SERVER_TYPES:
         return jsonify({
             "error": f"Invalid server type '{server_type}'",
@@ -265,6 +269,86 @@ def create_server():
         "message": "Server provisioning started",
         "server_id": server_id,
     }), 202
+
+
+# ---------------------------------------------------------------------------
+# POST /api/servers/from-pack — multipart: "pack" (.mrpack file), "name",
+#   "mem_min", "mem_max" (GB), optional "port", "local_only" ("true"/"false")
+# Tessera Launcher builds the .mrpack from an instance; the itzg image installs
+# its loader, Minecraft version and server-side files when the server starts.
+# ---------------------------------------------------------------------------
+MAX_PACK_BYTES = 200 * 1024 * 1024
+
+
+def _read_mrpack(data: bytes) -> dict:
+    """The pack's modrinth.index.json, or ValueError if it isn't a usable .mrpack."""
+    import io
+    import json
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            index = json.loads(zf.read("modrinth.index.json"))
+    except (zipfile.BadZipFile, KeyError, ValueError) as exc:
+        raise ValueError("That isn't a Modrinth modpack (.mrpack)") from exc
+    if not str((index.get("dependencies") or {}).get("minecraft", "")).strip():
+        raise ValueError("The modpack doesn't say which Minecraft version it needs")
+    return index
+
+
+@servers_bp.route("/servers/from-pack", methods=["POST"])
+def create_server_from_pack():
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+
+    upload = request.files.get("pack")
+    if upload is None:
+        return jsonify({"error": "Upload the modpack as 'pack'"}), 400
+    data = upload.read(MAX_PACK_BYTES + 1)
+    if len(data) > MAX_PACK_BYTES:
+        return jsonify({"error": "The modpack is bigger than 200 MB"}), 413
+    try:
+        index = _read_mrpack(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    form = request.form
+    name = (form.get("name") or index.get("name") or "").strip()[:64]
+    if not name:
+        return jsonify({"error": "'name' is required"}), 400
+    try:
+        mem_min = int(form.get("mem_min", 2))
+        mem_max = int(form.get("mem_max", 4))
+        port = int(form["port"]) if form.get("port") else free_port(False)
+    except ValueError:
+        return jsonify({"error": "'mem_min', 'mem_max' and 'port' must be numbers"}), 400
+    if mem_min < 1 or mem_max < mem_min:
+        return jsonify({"error": "'mem_max' must be >= 'mem_min' >= 1"}), 400
+    if not (1024 <= port <= 65535):
+        return jsonify({"error": "'port' must be between 1024 and 65535"}), 400
+    local_only = form.get("local_only", "false").lower() == "true"
+    deps = index["dependencies"]
+    version = str(deps["minecraft"])
+    loader = next((f"{k} {deps[k]}" for k in ("fabric-loader", "quilt-loader", "forge", "neoforge") if deps.get(k)), None)
+
+    log.info("Modpack server requested: name=%s, minecraft=%s, loader=%s, size=%d", name, version, loader, len(data))
+    record = _create_server_record(name, "modpack", version, loader, port, mem_min, mem_max, local_only,
+                                   owner_id=g.current_user["id"])
+    if not record["success"]:
+        return jsonify(record), 409 if record.get("conflict") else 400
+    server_id = record["server_id"]
+
+    pack_path = os.path.join(server_data_dir(server_id), MODPACK_FILE)
+    os.makedirs(os.path.dirname(pack_path), exist_ok=True)
+    with open(pack_path, "wb") as fh:
+        fh.write(data)
+    progress_store.update(server_id, action="provision", percent=5, step="Modpack uploaded")
+
+    threading.Thread(
+        target=lambda: _provision_resources(server_id, record["subdomain"], port, None, None), daemon=True
+    ).start()
+    return jsonify({"success": True, "message": "Server provisioning started", "server_id": server_id}), 202
 
 
 # ---------------------------------------------------------------------------
