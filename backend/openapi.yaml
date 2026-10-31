@@ -453,7 +453,7 @@ paths:
   /api/servers/{id}/pack:
     put:
       tags: [Servers]
-      summary: Replace a modpack server's pack; a running server restarts and installs it (old pack files are removed)
+      summary: Replace a modpack server's pack; it's installed on the server's next start (old pack files are removed). A running server isn't restarted
       requestBody:
         required: true
         content:
@@ -462,7 +462,7 @@ paths:
               type: object
               required: [pack]
               properties: { pack: { type: string, format: binary } }
-      responses: { "200": { description: "{ success, restarted, message }" }, "400": { description: Not a modpack server, or not a usable .mrpack }, "404": { description: Server not found }, "413": { description: Too big } }
+      responses: { "200": { description: "{ success, restarted (always false), needs_restart (it's running: restart it to install the pack), message }" }, "400": { description: Not a modpack server, or not a usable .mrpack }, "404": { description: Server not found }, "413": { description: Too big } }
 
   /api/servers/{id}:
     get:

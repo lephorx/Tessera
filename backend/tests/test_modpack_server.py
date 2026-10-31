@@ -47,7 +47,7 @@ class ModpackTests(unittest.TestCase):
 
 
 class UpdatePackTests(unittest.TestCase):
-    """PUT /api/servers/<id>/pack swaps the pack, records the new versions and restarts a running server."""
+    """PUT /api/servers/<id>/pack swaps the pack and records the new versions; a running server keeps running."""
 
     def setUp(self):
         import tempfile
@@ -101,14 +101,15 @@ class UpdatePackTests(unittest.TestCase):
         return self.client.put(f"/api/servers/{sid}/pack", data={"pack": (io.BytesIO(data), "pack.mrpack")},
                                content_type="multipart/form-data")
 
-    def test_swaps_pack_and_restarts(self):
+    def test_swaps_pack_without_restarting(self):
         import os
         import time
 
         pack = mrpack({"name": "P", "dependencies": {"minecraft": "1.21.4", "neoforge": "21.4.1"}, "files": []})
         res = self.put(1, pack)
         self.assertEqual(res.status_code, 200, res.json)
-        self.assertTrue(res.json["restarted"])
+        self.assertFalse(res.json["restarted"])
+        self.assertTrue(res.json["needs_restart"])
         path = os.path.join(self.servers.server_data_dir(1), self.servers.MODPACK_FILE)
         with open(path, "rb") as fh:
             self.assertEqual(fh.read(), pack)
@@ -116,16 +117,14 @@ class UpdatePackTests(unittest.TestCase):
         with db.get_db() as conn:
             row = conn.execute("SELECT version, loader_version FROM servers WHERE id = 1").fetchone()
         self.assertEqual((row["version"], row["loader_version"]), ("1.21.4", "neoforge 21.4.1"))
-        for _ in range(50):
-            if self.restarted:
-                break
-            time.sleep(0.01)
-        self.assertEqual(self.restarted, [1])
+        time.sleep(0.2)
+        self.assertEqual(self.restarted, [])
 
     def test_stopped_server_is_not_started(self):
         self.state = "stopped"
         res = self.put(1, mrpack({"name": "P", "dependencies": {"minecraft": "1.21.1"}, "files": []}))
         self.assertFalse(res.json["restarted"])
+        self.assertFalse(res.json["needs_restart"])
         self.assertEqual(self.restarted, [])
 
     def test_refuses_other_servers_and_bad_files(self):

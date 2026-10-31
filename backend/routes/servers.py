@@ -379,8 +379,9 @@ def create_server_from_pack():
 # ---------------------------------------------------------------------------
 # PUT /api/servers/<id>/pack — multipart: "pack" (.mrpack file)
 # Tessera Launcher sends a newer server pack when the instance's mods change.
-# The file is swapped in and a running server restarted: on start the itzg image
-# installs the pack again and removes files the previous pack had added.
+# The file is swapped in; a running server keeps running until someone restarts it.
+# On its next start the itzg image installs the pack again and removes files the
+# previous pack had added.
 # ---------------------------------------------------------------------------
 @servers_bp.route("/servers/<int:server_id>/pack", methods=["PUT"])
 def update_server_pack(server_id: int):
@@ -418,15 +419,15 @@ def update_server_pack(server_id: int):
     with get_db() as conn:
         conn.execute("UPDATE servers SET version = ?, loader_version = ? WHERE id = ?", (version, loader, server_id))
 
+    # never restarted from here: players may be on, and the owner decides when
     running = docker_manager.runtime_status(server_id) in ("starting", "running", "healthy", "unhealthy")
-    if running:
-        threading.Thread(target=lambda: docker_manager.restart_server(server_id), daemon=True).start()
-    log.info("Modpack updated: db_id=%d, minecraft=%s, loader=%s, size=%d, restart=%s",
+    log.info("Modpack updated: db_id=%d, minecraft=%s, loader=%s, size=%d, running=%s",
              server_id, version, loader, len(data), running)
     return jsonify({
         "success": True,
-        "restarted": running,
-        "message": "Pack updated. Restarting to install it." if running else "Pack updated. It's installed when the server starts.",
+        "restarted": False,
+        "needs_restart": running,
+        "message": "Pack updated. Restart the server to install it." if running else "Pack updated. It's installed when the server starts.",
     }), 200
 
 
