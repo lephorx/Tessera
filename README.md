@@ -156,3 +156,7 @@ CSCM_API_URL=http://localhost:5000 pnpm dev
 The frontend listens on port 3000 and forwards requests to the API on port
 5000. The backend's detailed API documentation is in `backend/README.md` and
 `backend/openapi.yaml`.
+
+## Team
+
+Tessera is made by [lephor](https://github.com/lephorx) and [Nanoriddler](https://github.com/Nanoriddler).
