@@ -106,7 +106,7 @@ install_package() {
   esac
   rm -rf "$tmp"
   say ""
-  say "Done. Manage Tessera with: tessera help"
+  say "Manage Tessera with: tessera help"
   exit 0
 }
 
