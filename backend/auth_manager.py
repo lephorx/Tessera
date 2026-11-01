@@ -1,4 +1,5 @@
 import base64
+import hmac
 import io
 import json
 import os
@@ -152,7 +153,46 @@ def has_users() -> bool:
         return row is not None
 
 
-def begin_initial_user_setup(username: str, password: str) -> dict:
+# First-run setup is reachable by anyone who can open the dashboard (it listens
+# on 0.0.0.0), so creating the first admin needs a one-time code that only the
+# person running the machine can see: app.py prints it to the API's log (and
+# the installer shows it). It stays the same across restarts and is deleted
+# once the first account exists.
+SETUP_CODE_KEY = "setup_code"
+_SETUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I
+
+
+def _normalize_setup_code(code: str) -> str:
+    return "".join(ch for ch in str(code).upper() if ch.isalnum())
+
+
+def setup_code() -> str | None:
+    """The code that unlocks first-run setup, created on first use; None once an account exists."""
+    if has_users():
+        return None
+    code = "-".join("".join(secrets.choice(_SETUP_CODE_ALPHABET) for _ in range(4)) for _ in range(3))
+    with closing(_connect()) as connection:
+        # several workers starting at once all end up with the first one's code
+        connection.execute("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)", (SETUP_CODE_KEY, code))
+        connection.commit()
+    return get_config_value(SETUP_CODE_KEY)
+
+
+def check_setup_code(code: str) -> bool:
+    expected = get_config_value(SETUP_CODE_KEY)
+    if not expected or not code:
+        return False
+    return hmac.compare_digest(_normalize_setup_code(code), _normalize_setup_code(expected))
+
+
+def begin_initial_user_setup(username: str, password: str, code: str) -> dict:
+    if has_users():
+        raise RuntimeError("Initial setup has already been completed")
+    if not check_setup_code(code):
+        raise PermissionError(
+            "Wrong setup code. It's printed in the Tessera log: run "
+            "'docker compose logs api' in the installation folder."
+        )
     normalized_username = username.strip()
     if not normalized_username:
         raise ValueError("Username is required")
@@ -210,6 +250,7 @@ def complete_initial_user_setup(setup_token: str, otp_code: str) -> dict:
             (pending["username"], pending["password_hash"], pending["totp_secret"], _utcnow().isoformat()),
         )
         connection.execute("DELETE FROM pending_setups")
+        connection.execute("DELETE FROM app_config WHERE key = ?", (SETUP_CODE_KEY,))
         connection.commit()
 
     return {"id": int(cursor.lastrowid), "username": str(pending["username"]), "is_admin": True}

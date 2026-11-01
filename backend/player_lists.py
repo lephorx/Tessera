@@ -17,13 +17,13 @@ import re
 import threading
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 import requests
 
 import docker_manager
 import player_manager
 import properties_manager
+import safe_paths
 from db import get_db
 from docker_manager import BEDROCK_TYPES, server_data_dir
 from logger import get_logger
@@ -125,10 +125,11 @@ def _write_entry(server_id: int, kind: str, name: str, reason: str | None) -> di
     if not profile:
         return {"success": False, "message": f"No Minecraft account is called {name}"}
     player_uuid, exact = profile
-    path = Path(server_data_dir(server_id)) / FILES[kind]
+    base = server_data_dir(server_id)
+    # no symlinks followed: the folder is shared with the Minecraft container
     try:
-        entries = json.loads(path.read_text()) if path.exists() else []
-    except (OSError, json.JSONDecodeError):
+        entries = json.loads(safe_paths.read_text(base, FILES[kind])) if safe_paths.is_file(base, FILES[kind]) else []
+    except (OSError, ValueError):
         entries = []
     if any(e.get("uuid") == player_uuid or e.get("name", "").lower() == exact.lower() for e in entries):
         return {"success": True, "message": f"{exact} is already on {FILES[kind]}"}
@@ -141,8 +142,10 @@ def _write_entry(server_id: int, kind: str, name: str, reason: str | None) -> di
             source="CSCM", expires="forever", reason=reason or "Banned by an operator.",
         )
     entries.append(entry)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(entries, indent=2))
+    try:
+        safe_paths.write_text(base, FILES[kind], json.dumps(entries, indent=2))
+    except safe_paths.UnsafePath as exc:
+        return {"success": False, "message": f"Could not write {FILES[kind]}: {exc}"}
     return {"success": True, "message": f"Added {exact} to {FILES[kind]}"}
 
 
@@ -175,10 +178,11 @@ def seed_new_server(server_id: int, server_type: str, owner_id: int | None) -> N
     lists = get_lists(owner_id)
     if server_type in BEDROCK_TYPES:
         # straight into allowlist.json, without turning the allowlist on
-        path = Path(server_data_dir(server_id)) / "allowlist.json"
         if lists["whitelist"]:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps([{"name": n, "ignoresPlayerLimit": False} for n in lists["whitelist"]], indent=2))
+            safe_paths.write_text(
+                server_data_dir(server_id), "allowlist.json",
+                json.dumps([{"name": n, "ignoresPlayerLimit": False} for n in lists["whitelist"]], indent=2),
+            )
         return
     for kind, names in (("whitelist", lists["whitelist"]), ("ops", lists["ops"])):
         for name in names:

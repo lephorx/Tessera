@@ -105,7 +105,8 @@ export interface ParsedPlayers {
 
 export interface FileEntry {
   name: string
-  type: "file" | "directory"
+  /** "link": a symlink, shown so it can be deleted; never opened */
+  type: "file" | "directory" | "link"
   size: number | null
 }
 

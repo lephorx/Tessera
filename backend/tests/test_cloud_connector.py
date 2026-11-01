@@ -133,6 +133,8 @@ class CloudConnectorTests(unittest.TestCase):
             "cloud_url": "http://cloud.test", "machine_id": "m1", "credential": "cred-123",
             "agent_url": self.cloud.url, "paired_at": "now",
         })
+        # the test routes aren't member routes; the tests about the switch turn it off again
+        cloud_connector.set_remote_admin_allowed(True)
         self.connector = cloud_connector.CloudConnector(make_app())
         self.connector.start()
         self.assertTrue(self.cloud.connected.wait(5))
@@ -183,6 +185,7 @@ class CloudConnectorTests(unittest.TestCase):
         self.assertEqual(data, {"body": '{"a":1}', "query": "hi"})
 
     def test_sensitive_writes_need_remote_admin(self):
+        cloud_connector.set_remote_admin_allowed(False)
         self.cloud.request("r1", "PUT", "/api/settings", role="admin", body="{}")
         refused = self.cloud.next_frame("r1")
         self.assertEqual(refused["type"], "error")
@@ -191,6 +194,58 @@ class CloudConnectorTests(unittest.TestCase):
         cloud_connector.set_remote_admin_allowed(True)
         self.cloud.request("r2", "PUT", "/api/settings", role="admin", body="{}")
         self.assertEqual(self.cloud.read_body("r2")[0]["status"], 200)
+
+    def test_encoded_paths_are_checked_decoded(self):
+        # S3: /api/cl%6Fud/... is /api/cloud/... once Flask decodes it
+        cloud_connector.set_remote_admin_allowed(False)
+        for rid, path in [
+            ("a", "/api/cl%6Fud/settings"), ("b", "/api/%75sers"), ("c", "/api/%73ettings"),
+            ("d", "/api/servers/1/../../users"), ("e", "/api/servers/%2e%2e/users"),
+            ("f", "/api/%2575sers"), ("g", "/api/servers/1/files%3Fpath=x"), ("h", "/api//users"),
+        ]:
+            self.cloud.request(rid, "PUT", path, role="admin", body="{}")
+            frame = self.cloud.next_frame(rid)
+            self.assertEqual((frame["type"], frame["status"]), ("error", 403), path)
+
+    def test_normalize_path(self):
+        n = cloud_connector.normalize_path
+        self.assertEqual(n("/api/cl%6Fud/settings"), "/api/cloud/settings")
+        self.assertEqual(n("/api/servers/3/start"), "/api/servers/3/start")
+        for bad in ("/api/%2575sers", "/api/a/../b", "/api/./x", "/api//x", "/api/a%5Cb", "/api/a b", "api/x", "/api/%ff"):
+            self.assertIsNone(n(bad), bad)
+        # anything not already normalized is refused by the check itself
+        self.assertIsNotNone(cloud_connector.check_route("GET", "/api/%75sers"))
+
+    def test_without_remote_admin_only_member_routes(self):
+        # Q5: no console, files, players, backups etc. for anyone without the switch
+        cloud_connector.set_remote_admin_allowed(False)
+        check = cloud_connector.check_route
+        for method, path in [
+            ("GET", "/api/servers/1/console/stream"), ("POST", "/api/servers/1/command"),
+            ("GET", "/api/servers/1/logs"), ("GET", "/api/servers/1/files"),
+            ("GET", "/api/servers/1/files/download"), ("PUT", "/api/servers/1/files/content"),
+            ("POST", "/api/servers/1/files/upload"), ("GET", "/api/servers/1/backups/2/download"),
+            ("POST", "/api/servers/1/players/alex/op"), ("PATCH", "/api/servers/1/properties"),
+            ("GET", "/api/settings"), ("GET", "/api/users"), ("POST", "/api/system/update"),
+            ("DELETE", "/api/servers/1"), ("GET", "/api/whoami"),
+        ]:
+            self.assertIsNotNone(check(method, path), f"{method} {path}")
+        for method, path in [
+            ("GET", "/api/servers"), ("GET", "/api/servers/1"), ("HEAD", "/api/servers/1"),
+            ("POST", "/api/servers/1/start"), ("POST", "/api/servers/from-pack"),
+            ("PUT", "/api/servers/1/pack"), ("GET", "/api/auth/me"),
+        ]:
+            self.assertIsNone(check(method, path), f"{method} {path}")
+        # a relayed request is refused before it reaches the app
+        self.cloud.request("r1", "GET", "/api/whoami", role="admin")
+        self.assertEqual(self.cloud.next_frame("r1")["status"], 403)
+
+        cloud_connector.set_remote_admin_allowed(True)
+        self.assertIsNone(check("GET", "/api/servers/1/console/stream"))
+        self.assertIsNone(check("GET", "/api/servers/1/files"))
+        # still never: the link itself and sign-in
+        self.assertIsNotNone(check("PUT", "/api/cloud/settings"))
+        self.assertIsNotNone(check("POST", "/api/auth/login"))
 
     def test_cloud_and_sign_in_routes_are_refused(self):
         for rid, method, path in [("a", "DELETE", "/api/cloud"), ("b", "POST", "/api/auth/login"), ("c", "GET", "/etc/passwd")]:

@@ -132,13 +132,17 @@ paths:
           application/json:
             schema:
               type: object
-              required: [username, password]
+              required: [username, password, setup_code]
               properties:
                 username: { type: string }
                 password: { type: string, minLength: 12 }
+                setup_code:
+                  type: string
+                  description: One-time code printed to the API log until the first account exists
       responses:
         "202": { description: Pending setup token and authenticator QR code }
         "400": { description: Validation error }
+        "403": { description: Wrong setup code }
         "409": { description: Already set up }
 
   /api/auth/setup/verify:

@@ -219,8 +219,9 @@ export function CloudPanel() {
             <span>
               <span className="block font-medium">Allow remote admin</span>
               <span className="block text-xs text-muted-foreground">
-                Lets cloud admins change connection settings and users and
-                update CSCM. Servers can always be managed remotely.
+                Lets the cloud reach the console, files, players, backups,
+                settings, users and updates. Without it, servers can only be
+                listed, created, started, stopped and get a new pack remotely.
               </span>
             </span>
             <Switch

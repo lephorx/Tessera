@@ -200,10 +200,10 @@ def get_icon(server_id: int):
     auth_err = authorize()
     if auth_err:
         return auth_err
-    path = appearance_manager.icon_path(server_id)
-    if path is None:
+    icon = appearance_manager.open_icon(server_id)
+    if icon is None:
         return jsonify({"success": False, "message": "This server has no icon"}), 404
-    return send_file(path, mimetype="image/png", max_age=0)
+    return send_file(icon, mimetype="image/png", max_age=0)
 
 
 @properties_bp.route("/servers/<int:server_id>/icon", methods=["PUT"])

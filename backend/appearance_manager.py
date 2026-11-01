@@ -6,10 +6,14 @@ lines, § formatting codes allowed) and the icon in ``server-icon.png``, a
 icon. Both are read when the server starts.
 """
 
+import os
 import re
+import stat
 import struct
 from pathlib import Path
+from typing import BinaryIO
 
+import safe_paths
 from docker_manager import BEDROCK_TYPES, server_data_dir
 from logger import get_logger
 
@@ -63,10 +67,12 @@ def _unescape(value: str) -> str:
     return _ESCAPE_RE.sub(replace, value).encode("utf-16", "surrogatepass").decode("utf-16")
 
 
-def _read_raw(path: Path, key: str) -> str | None:
-    if not path.exists():
+# The server folder is shared with the Minecraft container, so files in it are
+# read and written without following symlinks (safe_paths).
+def _read_raw(base: Path, name: str, key: str) -> str | None:
+    if not safe_paths.is_file(base, name):
         return None
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in safe_paths.read_text(base, name, errors="replace").splitlines():
         stripped = line.strip()
         if stripped.startswith("#") or "=" not in stripped:
             continue
@@ -76,11 +82,11 @@ def _read_raw(path: Path, key: str) -> str | None:
     return None
 
 
-def _write_raw(path: Path, key: str, value: str) -> None:
+def _write_raw(base: Path, name: str, key: str, value: str) -> None:
     """Set one key, keeping the rest of the file (and its order) as is. The
     file is created when the server hasn't started yet; Minecraft fills in
     everything else on its first start."""
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines() if path.exists() else []
+    lines = safe_paths.read_text(base, name, errors="replace").splitlines() if safe_paths.is_file(base, name) else []
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith("#") or "=" not in stripped:
@@ -90,22 +96,22 @@ def _write_raw(path: Path, key: str, value: str) -> None:
             break
     else:
         lines.append(f"{key}={value}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    safe_paths.write_text(base, name, "\n".join(lines) + "\n")
 
 
 def icon_version(server_id: int) -> int | None:
     """Changes whenever the icon does (None without one), so clients know
     when to fetch it again."""
     try:
-        return (_data_dir(server_id) / ICON_NAME).stat().st_mtime_ns // 1_000_000
-    except OSError:
+        st = safe_paths.lstat(_data_dir(server_id), ICON_NAME)
+    except (OSError, safe_paths.UnsafePath):
         return None
+    return st.st_mtime_ns // 1_000_000 if stat.S_ISREG(st.st_mode) else None
 
 
 def get_appearance(server_id: int, server_type: str) -> dict:
     bedrock = server_type in BEDROCK_TYPES
-    raw = _read_raw(_data_dir(server_id) / "server.properties", _description_key(server_type))
+    raw = _read_raw(_data_dir(server_id), "server.properties", _description_key(server_type))
     if raw is None:
         description = ""
     else:
@@ -135,14 +141,17 @@ def set_description(server_id: int, server_type: str, description: str) -> tuple
     if len(description) > MAX_DESCRIPTION_LENGTH:
         return False, f"The description can be at most {MAX_DESCRIPTION_LENGTH} characters"
 
-    _write_raw(_data_dir(server_id) / "server.properties", _description_key(server_type), value)
+    _write_raw(_data_dir(server_id), "server.properties", _description_key(server_type), value)
     log.info("Description updated: server_id=%d", server_id)
     return True, "Description saved"
 
 
-def icon_path(server_id: int) -> Path | None:
-    path = _data_dir(server_id) / ICON_NAME
-    return path if path.is_file() else None
+def open_icon(server_id: int) -> BinaryIO | None:
+    """The icon, opened for reading (None without one, or when it's a link)."""
+    try:
+        return safe_paths.open_file(_data_dir(server_id), ICON_NAME)
+    except (OSError, safe_paths.UnsafePath):
+        return None
 
 
 def set_icon(server_id: int, data: bytes) -> tuple[bool, str]:
@@ -157,16 +166,15 @@ def set_icon(server_id: int, data: bytes) -> tuple[bool, str]:
     if (width, height) != (ICON_SIZE, ICON_SIZE):
         return False, f"The icon must be {ICON_SIZE}x{ICON_SIZE} pixels (got {width}x{height})"
 
-    path = _data_dir(server_id) / ICON_NAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".png.tmp")
-    tmp.write_bytes(data)
-    tmp.replace(path)
+    # written next to it and renamed over it, which replaces a link instead of writing through it
+    safe_paths.replace_bytes(_data_dir(server_id), ICON_NAME, data)
     log.info("Server icon updated: server_id=%d", server_id)
     return True, "Icon saved"
 
 
 def remove_icon(server_id: int) -> None:
-    path = _data_dir(server_id) / ICON_NAME
-    path.unlink(missing_ok=True)
+    try:
+        os.unlink(_data_dir(server_id) / ICON_NAME)  # unlinking a link removes the link only
+    except FileNotFoundError:
+        pass
     log.info("Server icon removed: server_id=%d", server_id)

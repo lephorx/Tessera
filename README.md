@@ -22,8 +22,9 @@ curl -fsSL https://lephor.com/cscm/install.sh | sh
 ```
 
 The installer asks a single question (install with the defaults, or pick the
-folders and port) and starts the application. For Windows, run it from WSL 2
-with Docker Desktop integration enabled.
+folders and port), starts the application and shows the **setup code** you
+need to create your account. For Windows, run it from WSL 2 with Docker
+Desktop integration enabled.
 
 Everything else is set up in the dashboard right after you create your account:
 local-only or public servers, your Playit account, a Playit agent that Tessera runs
@@ -52,9 +53,19 @@ for creating and managing servers.
    ```
 
 3. Open `http://localhost:3000` (or the port set by `WEB_PORT`). The first
-   visit guides you through creating the local account. Scan the authenticator
-   QR code and enter one current six-digit code to finish registration; the
-   dashboard signs you in automatically.
+   visit guides you through creating the local account. It asks for the
+   one-time setup code that the API prints to its log until an account exists:
+
+   ```sh
+   docker compose logs api | grep "Setup code"
+   ```
+
+   The dashboard listens on every network interface, so the code makes sure
+   only the person who can see this machine's logs becomes the admin, not
+   whoever on the network opens the page first. It stays the same across
+   restarts and is deleted once the account exists. Then scan the
+   authenticator QR code and enter one current six-digit code to finish
+   registration; the dashboard signs you in automatically.
 
 The dashboard proxies its API requests to `http://api:5000` inside the Compose
 network. `GET /health` on the dashboard checks the backend. The SQLite file is

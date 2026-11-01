@@ -546,7 +546,7 @@ export function FileExplorer({ serverId }: Props) {
                         setMenu({
                           name: entry.name,
                           entryPath,
-                          isFile: entry.type === "file",
+                          isFile: entry.type !== "directory",
                           x: rect.right,
                           y: rect.bottom + 4,
                         })

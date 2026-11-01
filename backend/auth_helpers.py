@@ -12,6 +12,13 @@ from logger import get_logger
 log = get_logger("api")
 
 
+# EventSource can't set an Authorization header, so these endpoints also take
+# the JWT as ?token=. Everything that checks who the caller is (authorize(),
+# the server ownership check in app.py) reads it through request_token(), so
+# the identity that authenticates is always the one whose access is checked.
+QUERY_TOKEN_ENDPOINTS = {"console.stream_console"}
+
+
 def extract_bearer_token() -> str | None:
     authorization = request.headers.get("Authorization", "").strip()
     if not authorization.startswith("Bearer "):
@@ -21,6 +28,15 @@ def extract_bearer_token() -> str | None:
     if token.startswith("Bearer "):
         token = token[7:].strip()
     return token or None
+
+
+def request_token() -> str | None:
+    """The caller's JWT: the Authorization header, or ?token= on the endpoints
+    that allow it (only when there is no header)."""
+    token = extract_bearer_token()
+    if token is None and request.endpoint in QUERY_TOKEN_ENDPOINTS:
+        token = request.args.get("token", "").strip() or None
+    return token
 
 
 def authorize() -> tuple | None:
@@ -34,7 +50,7 @@ def authorize() -> tuple | None:
     if not has_users():
         return jsonify({"error": "Setup required", "setup_required": True}), 403
 
-    token = extract_bearer_token()
+    token = request_token()
     if not token:
         log.warning(
             "Missing bearer token: method=%s path=%s remote=%s",

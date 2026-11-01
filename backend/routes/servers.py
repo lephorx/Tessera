@@ -1,6 +1,5 @@
 """Server CRUD, lifecycle, console command, stats, logs, and networking routes."""
 
-import os
 import sqlite3
 import threading
 
@@ -10,6 +9,7 @@ import appearance_manager
 import docker_manager
 import progress_store
 import properties_manager
+import safe_paths
 from cloudflare_manager import cloudflare_enabled
 from auth_helpers import authorize, require_admin
 import auth_manager
@@ -364,10 +364,8 @@ def create_server_from_pack():
         return jsonify(record), 409 if record.get("conflict") else 400
     server_id = record["server_id"]
 
-    pack_path = os.path.join(server_data_dir(server_id), MODPACK_FILE)
-    os.makedirs(os.path.dirname(pack_path), exist_ok=True)
-    with open(pack_path, "wb") as fh:
-        fh.write(data)
+    # the server folder is shared with the container: never write through a symlink there
+    safe_paths.replace_bytes(server_data_dir(server_id), MODPACK_FILE, data)
     progress_store.update(server_id, action="provision", percent=5, step="Modpack uploaded")
 
     threading.Thread(
@@ -406,12 +404,11 @@ def update_server_pack(server_id: int):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    pack_path = os.path.join(server_data_dir(server_id), MODPACK_FILE)
-    os.makedirs(os.path.dirname(pack_path), exist_ok=True)
-    tmp = pack_path + ".new"
-    with open(tmp, "wb") as fh:
-        fh.write(data)
-    os.replace(tmp, pack_path)
+    try:
+        # a new temporary file renamed over the old pack; never written through a symlink
+        safe_paths.replace_bytes(server_data_dir(server_id), MODPACK_FILE, data)
+    except safe_paths.UnsafePath:
+        return jsonify({"error": "The server folder has a symlink where the pack goes"}), 409
 
     deps = index["dependencies"]
     version = str(deps["minecraft"])

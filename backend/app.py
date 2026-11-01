@@ -17,7 +17,7 @@ import cloud_connector
 import rate_limit
 import server_manager
 import update_manager
-from auth_helpers import authorize, extract_bearer_token
+from auth_helpers import authorize, extract_bearer_token, request_token
 from auth_manager import (
     authenticate_user,
     begin_initial_user_setup,
@@ -26,6 +26,7 @@ from auth_manager import (
     initialize_auth_storage,
     issue_jwt,
     primary_admin_id,
+    setup_code,
     verify_jwt,
 )
 from db import get_db, init_schema
@@ -49,6 +50,16 @@ app = Flask(__name__)
 
 init_schema()
 initialize_auth_storage()
+
+
+def _announce_setup_code() -> None:
+    """Until the first account exists, setup needs the code printed here (auth_manager.setup_code)."""
+    code = setup_code()
+    if code:
+        log.warning("No account yet. Setup code: %s (enter it on the setup page to create the admin account)", code)
+
+
+_announce_setup_code()
 
 
 def _validate_server_dirs() -> None:
@@ -126,7 +137,8 @@ def _enforce_server_ownership():
     server_id = (request.view_args or {}).get("server_id")
     if server_id is None:
         return None
-    token = extract_bearer_token()
+    # the same token authorize() will accept, ?token= included (console stream)
+    token = request_token()
     user = verify_jwt(token) if token else None
     if not user or user["is_admin"]:
         return None
@@ -192,9 +204,13 @@ def setup_auth():
     body = request.get_json(silent=True) or {}
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
+    code = str(body.get("setup_code", ""))
 
     try:
-        setup_payload = begin_initial_user_setup(username, password)
+        setup_payload = begin_initial_user_setup(username, password, code)
+    except PermissionError as exc:
+        log.warning("Initial setup refused (wrong setup code): ip=%s", rate_limit.client_ip())
+        return jsonify({"error": str(exc), "setup_code_required": True}), 403
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:

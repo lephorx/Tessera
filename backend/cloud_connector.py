@@ -23,6 +23,7 @@ import base64
 import json
 import os
 import random
+import re
 import secrets
 import socket
 import sqlite3
@@ -30,7 +31,7 @@ import threading
 import time
 from contextlib import closing
 from datetime import UTC, datetime
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import pyotp
 import requests
@@ -192,14 +193,54 @@ def resolve_user(cloud_user_id: str, cloud_username: str, role: str) -> dict:
 
 # ── what the cloud may call ────────────────────────────────────────────────
 
-READ_METHODS = {"GET", "HEAD", "OPTIONS"}
-# Writes here need "Allow remote admin": secrets, accounts, updating CSCM itself.
-SENSITIVE_PREFIXES = ("/api/settings", "/api/users", "/api/system/update")
+# Without "Allow remote admin" the cloud only reaches what a member needs day to
+# day: see servers, create one (also from a launcher pack), start, stop and
+# restart it, swap its pack. Console, commands, logs, the file manager,
+# players, properties, backups, settings, users and updates need the switch,
+# for cloud admins too. Everything else (/api/cloud, sign-in) never goes
+# through. Ownership is still checked by the routes themselves.
+MEMBER_ROUTES = [
+    (method, re.compile(pattern))
+    for method, pattern in (
+        ("GET", r"/api/auth/(me|status)"),
+        ("GET", r"/api/version"),
+        ("GET", r"/api/system/version"),
+        ("GET", r"/api/server-types"),
+        ("GET", r"/api/servers"),
+        ("GET", r"/api/servers/ports"),
+        ("POST", r"/api/servers"),
+        ("POST", r"/api/servers/from-pack"),
+        ("GET", r"/api/servers/\d+"),
+        ("GET", r"/api/servers/\d+/(progress|stats|appearance|icon)"),
+        ("POST", r"/api/servers/\d+/(start|stop|restart)"),
+        ("PUT", r"/api/servers/\d+/pack"),
+    )
+]
+# what may appear in a path once it is decoded; no '%' (double encoding), no '\\', no spaces
+_PATH_CHARS = re.compile(r"[A-Za-z0-9._~!$&'()*+,;=:@/-]*")
+
+
+def normalize_path(raw: str) -> str | None:
+    """The path exactly as Flask will route it (percent-decoded once), or None
+    when it is ambiguous: still encoded after decoding, '.', '..' or empty
+    segments, odd characters. The allow-list is checked on this string and
+    this string is what runs, so `/api/cl%6Fud/...` is just `/api/cloud/...`."""
+    try:
+        path = unquote(raw, errors="strict")
+    except UnicodeDecodeError:
+        return None
+    if not path.startswith("/") or not _PATH_CHARS.fullmatch(path):
+        return None
+    segments = path[1:].split("/")
+    if any(seg in ("", ".", "..") for seg in segments[:-1]) or segments[-1] in (".", ".."):
+        return None
+    return path
 
 
 def check_route(method: str, path: str) -> str | None:
-    """None if the cloud may call this route, otherwise why not."""
-    if not path.startswith("/api/") or ".." in path:
+    """None if the cloud may call this route, otherwise why not. path must
+    already be normalize_path()'s result; anything else is refused."""
+    if normalize_path(path) != path or not path.startswith("/api/"):
         return "Only API routes can be called through the cloud."
     if path == "/api/cloud" or path.startswith("/api/cloud/"):
         return "The cloud connection can only be changed on this machine."
@@ -207,9 +248,13 @@ def check_route(method: str, path: str) -> str | None:
         if method == "GET" and path in ("/api/auth/me", "/api/auth/status"):
             return None
         return "Sign-in routes can't be called through the cloud."
-    if method not in READ_METHODS and path.startswith(SENSITIVE_PREFIXES) and not remote_admin_allowed():
-        return "Turn on \"Allow remote admin\" in this machine's Cloud settings first."
-    return None
+    if remote_admin_allowed():
+        return None
+    wanted = "GET" if method == "HEAD" else method
+    for route_method, pattern in MEMBER_ROUTES:
+        if pattern.fullmatch(path) and (route_method == wanted or method == "OPTIONS"):
+            return None
+    return "Turn on \"Allow remote admin\" in this machine's Cloud settings first."
 
 
 # ── the connector ──────────────────────────────────────────────────────────
@@ -444,7 +489,9 @@ class CloudConnector:
         rid = frame["id"]
         method = str(frame.get("method", "GET")).upper()
         full_path = str(frame.get("path", ""))
-        path, _, query = full_path.partition("?")
+        raw_path, _, query = full_path.partition("?")
+        # decoded before the check, and the decoded string is what runs
+        path = normalize_path(raw_path)
 
         headers = {str(k).lower(): str(v) for k, v in (frame.get("headers") or {}).items()}
         cloud_user_id = headers.pop("x-cscm-user", None)
@@ -458,9 +505,9 @@ class CloudConnector:
             self._send({"type": "error", "id": rid, "status": 400, "message": "Missing caller."})
             return
         user = resolve_user(cloud_user_id, cloud_username, role)
-        refused = check_route(method, path)
+        refused = check_route(method, path) if path is not None else "Only API routes can be called through the cloud."
         if refused:
-            audit(cloud_user_id, user["username"], method, path, 403)
+            audit(cloud_user_id, user["username"], method, path or raw_path, 403)
             self._send({"type": "error", "id": rid, "status": 403, "message": refused})
             return
 
@@ -480,6 +527,10 @@ class CloudConnector:
             data=body,
             environ_base={"REMOTE_ADDR": "tessera-cloud"},
         ).get_environ()
+        if environ["PATH_INFO"] != path:  # never route anything but the checked path
+            audit(cloud_user_id, user["username"], method, path, 403)
+            self._send({"type": "error", "id": rid, "status": 403, "message": "Only API routes can be called through the cloud."})
+            return
         app_iter, status, resp_headers = run_wsgi_app(self.app, environ, buffered=False)
         status_code = int(status.split(" ", 1)[0])
         out_headers = {k.lower(): v for k, v in resp_headers.items() if k.lower() not in HOP_BY_HOP}

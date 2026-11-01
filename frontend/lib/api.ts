@@ -825,10 +825,11 @@ async function authFetch(endpoint: string, options: RequestInit = {}) {
 
 export const authApi = {
   status: () => authFetch("/api/auth/status"),
-  setup: (username: string, password: string) =>
+  /** setupCode: the one-time code the API prints to its log until the first account exists */
+  setup: (username: string, password: string, setupCode: string) =>
     authFetch("/api/auth/setup", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, setup_code: setupCode }),
     }),
   verifySetup: (setupToken: string, otp: string) =>
     authFetch("/api/auth/setup/verify", {

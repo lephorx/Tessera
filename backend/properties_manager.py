@@ -6,8 +6,8 @@ edit would be silently overwritten on the next restart.
 """
 
 import time
-from pathlib import Path
 
+import safe_paths
 from auth_manager import delete_config_value, get_config_json, set_config_json
 from docker_manager import server_data_dir
 from logger import get_logger
@@ -25,8 +25,17 @@ BLACKLISTED_KEYS = {
 DEFAULT_PROPERTIES_CONFIG_KEY = "default_server_properties"
 
 
-def _properties_path(server_id: int) -> Path:
-    return Path(server_data_dir(server_id)) / "server.properties"
+PROPERTIES_FILE = "server.properties"
+
+
+# The server folder is shared with the Minecraft container: read and write
+# server.properties without following a symlink planted there (safe_paths).
+def _has_properties(server_id: int) -> bool:
+    return safe_paths.is_file(server_data_dir(server_id), PROPERTIES_FILE)
+
+
+def _read_properties_text(server_id: int) -> str:
+    return safe_paths.read_text(server_data_dir(server_id), PROPERTIES_FILE, errors="replace")
 
 
 def _normalize_properties(properties: dict) -> tuple[dict[str, str], list[str]]:
@@ -45,11 +54,10 @@ def _normalize_properties(properties: dict) -> tuple[dict[str, str], list[str]]:
 
 
 def read_properties(server_id: int) -> dict:
-    path = _properties_path(server_id)
-    if not path.exists():
+    if not _has_properties(server_id):
         return {}
     props = {}
-    for line in path.read_text(errors="replace").splitlines():
+    for line in _read_properties_text(server_id).splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -63,12 +71,11 @@ def patch_properties(server_id: int, changes: dict) -> dict:
 
     Returns {"changed": [...], "rejected": [...], "restart_required": bool}.
     """
-    path = _properties_path(server_id)
-    if not path.exists():
+    if not _has_properties(server_id):
         return {"changed": [], "rejected": list(changes.keys()), "restart_required": False,
                  "error": "server.properties not found — has the server started at least once?"}
 
-    lines = path.read_text(errors="replace").splitlines()
+    lines = _read_properties_text(server_id).splitlines()
     remaining = dict(changes)
     changed = []
     rejected = []
@@ -93,7 +100,7 @@ def patch_properties(server_id: int, changes: dict) -> dict:
         lines.append(f"{key}={value}")
         changed.append(key)
 
-    path.write_text("\n".join(lines) + "\n")
+    safe_paths.write_text(server_data_dir(server_id), PROPERTIES_FILE, "\n".join(lines) + "\n")
     log.info("server.properties updated: server_id=%d, changed=%s", server_id, changed)
     return {"changed": changed, "rejected": rejected, "restart_required": bool(changed)}
 
@@ -191,14 +198,14 @@ def patch_bedrock_properties(server_id: int, changes: dict) -> dict:
     return result
 
 
-def wait_for_properties_file(server_id: int, timeout_seconds: float = 30.0, poll_interval: float = 0.5) -> Path | None:
-    path = _properties_path(server_id)
+def wait_for_properties_file(server_id: int, timeout_seconds: float = 30.0, poll_interval: float = 0.5) -> bool | None:
+    """True once server.properties exists, None after the timeout."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if path.exists():
-            return path
+        if _has_properties(server_id):
+            return True
         time.sleep(poll_interval)
-    return path if path.exists() else None
+    return True if _has_properties(server_id) else None
 
 
 def get_default_properties() -> dict[str, str]:

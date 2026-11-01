@@ -35,6 +35,7 @@ from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 
 import docker_manager
+import safe_paths
 from docker_manager import server_data_dir
 from db import get_db
 from logger import get_logger
@@ -114,6 +115,10 @@ def _zfs_snapshot_size(snapshot: str) -> int:
 
 # ---------------------------------------------------------------------------
 # Per-type creation helpers
+#
+# The server folder is shared with the Minecraft container, so it may hold
+# symlinks to anything this API can read (the database with the JWT secret).
+# Zips and copies only ever take real files and folders (safe_paths).
 # ---------------------------------------------------------------------------
 
 def _create_zip_backup(data_dir: Path, dest_dir: Path, timestamp: str) -> dict:
@@ -121,9 +126,7 @@ def _create_zip_backup(data_dir: Path, dest_dir: Path, timestamp: str) -> dict:
     dest = dest_dir / filename
     try:
         with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
-            for fp in data_dir.rglob("*"):
-                if fp.is_file():
-                    zf.write(fp, fp.relative_to(data_dir))
+            safe_paths.zip_tree(data_dir, zf)
     except Exception as exc:
         dest.unlink(missing_ok=True)
         return {"success": False, "message": f"Zip creation failed: {exc}"}
@@ -134,11 +137,11 @@ def _create_copy_backup(data_dir: Path, dest_dir: Path, timestamp: str) -> dict:
     dirname = f"backup-copy-{timestamp}"
     dest = dest_dir / dirname
     try:
-        shutil.copytree(str(data_dir), str(dest))
+        safe_paths.copy_tree(data_dir, dest)
     except Exception as exc:
         shutil.rmtree(dest, ignore_errors=True)
         return {"success": False, "message": f"Copy backup failed: {exc}"}
-    size = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file())
+    size = safe_paths.tree_size(dest)
     return {"success": True, "filename": dirname, "size_bytes": size}
 
 
@@ -283,9 +286,7 @@ def get_backup_download_archive(server_id: int, backup_id: int) -> tuple[Path | 
         tmp_fd, tmp_path = tempfile.mkstemp(suffix=".zip")
         os.close(tmp_fd)
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for fp in path.rglob("*"):
-                if fp.is_file():
-                    zf.write(fp, fp.relative_to(path))
+            safe_paths.zip_tree(path, zf)
     except Exception as exc:
         Path(tmp_path).unlink(missing_ok=True)
         return None, False, f"Failed to create download archive: {exc}"
@@ -333,8 +334,21 @@ def restore_backup(server_id: int, backup_id: int) -> dict:
     data_dir = Path(server_data_dir(server_id))
     base     = os.path.realpath(docker_manager.SERVERS_DIR)
 
-    if btype != BACKUP_TYPE_ZFS and not os.path.realpath(data_dir).startswith(base):
+    # a real containment check: /data/servers/12 merely starts with /data/servers/1
+    if btype != BACKUP_TYPE_ZFS and (
+        data_dir.is_symlink() or not safe_paths.is_inside(base, data_dir) or os.path.realpath(data_dir) == base
+    ):
         return {"success": False, "message": "Refusing to restore outside SERVERS_DIR"}
+
+    if btype == BACKUP_TYPE_ZIP:
+        # refuse a zip-slip archive before the server is stopped and its folder emptied
+        try:
+            safe_paths.check_zip(_server_backups_dir(server_id) / filename)
+        except FileNotFoundError:
+            pass  # answered below
+        except (safe_paths.UnsafePath, zipfile.BadZipFile) as exc:
+            log.warning("Backup restore refused: server_id=%d backup_id=%d error=%s", server_id, backup_id, exc)
+            return {"success": False, "message": f"The backup archive can't be restored: {exc}"}
 
     docker_manager.stop_server(server_id)
 
@@ -345,8 +359,8 @@ def restore_backup(server_id: int, backup_id: int) -> dict:
             return {"success": False, "message": "Backup archive missing on disk"}
         shutil.rmtree(data_dir, ignore_errors=True)
         data_dir.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(archive, "r") as zf:
-            zf.extractall(data_dir)
+        # no entries outside the folder, no symlinks (also not from zips made before this check)
+        safe_paths.extract_zip(archive, data_dir)
 
     elif btype == BACKUP_TYPE_COPY:
         src = _server_backups_dir(server_id) / filename
@@ -354,7 +368,7 @@ def restore_backup(server_id: int, backup_id: int) -> dict:
             docker_manager.start_server(server_id)
             return {"success": False, "message": "Backup directory missing on disk"}
         shutil.rmtree(data_dir, ignore_errors=True)
-        shutil.copytree(str(src), str(data_dir))
+        safe_paths.copy_tree(src, data_dir)
 
     elif btype == BACKUP_TYPE_ZFS:
         rc, _, stderr = _zfs_run(["rollback", "-r", filename])

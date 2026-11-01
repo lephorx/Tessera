@@ -2,11 +2,10 @@
 
 import time
 
-from flask import Blueprint, Response, jsonify, request, stream_with_context
+from flask import Blueprint, Response, jsonify, stream_with_context
 
 import docker_manager
-from auth_helpers import extract_bearer_token
-from auth_manager import verify_jwt
+from auth_helpers import authorize
 from db import get_db
 from logger import get_logger
 
@@ -25,12 +24,13 @@ def stream_console(server_id: int):
     """SSE stream of live console output.
 
     EventSource cannot set custom headers, so the dashboard passes the JWT as
-    a query parameter; relayed requests from the cloud use the header.
+    a query parameter; relayed requests from the cloud use the header. Both
+    go through request_token() (auth_helpers), the same token the ownership
+    check in app.py reads.
     """
-    token = extract_bearer_token() or request.args.get("token", "")
-    user = verify_jwt(token) if token else None
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
 
     if not _server_exists(server_id):
         return jsonify({"success": False, "message": "Server not found"}), 404

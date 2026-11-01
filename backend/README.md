@@ -116,10 +116,11 @@ docker compose up --build
 Then:
 
 ```bash
-# 1. Begin first-run setup (returns setup_token + authenticator QR)
+# 1. Begin first-run setup (returns setup_token + authenticator QR).
+#    The setup code is printed in the API log: docker compose logs api | grep "Setup code"
 curl -X POST http://localhost:3000/api/auth/setup \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "a-very-long-password"}'
+  -d '{"username": "admin", "password": "a-very-long-password", "setup_code": "ABCD-EFGH-JKLM"}'
 # Scan the returned qr_code_data_uri with an authenticator app, or use totp_secret directly.
 
 # 2. Enter one authenticator code to create the account and receive a JWT
@@ -203,8 +204,9 @@ needed for local development outside Docker.
 CSCM uses **local, single-admin authentication**: username + password + TOTP (2FA), issuing
 short-lived JWTs. There is no user management beyond the first account.
 
-1. `POST /api/auth/setup` — begin a 15-minute enrollment. Returns a setup token, TOTP
-   secret, URI, and QR code to scan into an authenticator app. No user is created yet.
+1. `POST /api/auth/setup` — begin a 15-minute enrollment with the one-time setup code
+   from the API log (see below). Returns a setup token, TOTP secret, URI, and QR code to
+   scan into an authenticator app. No user is created yet.
 2. `POST /api/auth/setup/verify` — send the setup token and one current TOTP code. This
    creates the admin account and returns a JWT, so no second code is needed at setup.
 3. Later, `POST /api/auth/login` exchanges username, password, and a current code for a JWT.
@@ -213,6 +215,12 @@ short-lived JWTs. There is no user management beyond the first account.
 
 If `GET /api/auth/status` reports `setup_required: true`, no account exists yet and every
 protected endpoint will return `403`.
+
+Until the first account exists, the API prints a one-time **setup code** to its log on
+every start (`Setup code: ABCD-EFGH-JKLM`; `docker compose logs api | grep "Setup code"`).
+`POST /api/auth/setup` needs it, so someone else on the network can't claim the admin
+account first. The code stays the same across restarts and is deleted once the account
+is created.
 
 ## Error Format
 
@@ -257,10 +265,10 @@ No auth required. Returns whether setup is needed and whether the caller is auth
 
 #### `POST /api/auth/setup`
 
-No auth required (fails with `409` if already set up). Body:
+No auth required (fails with `409` if already set up, `403` with a wrong setup code). Body:
 
 ```json
-{ "username": "admin", "password": "at-least-12-characters" }
+{ "username": "admin", "password": "at-least-12-characters", "setup_code": "ABCD-EFGH-JKLM" }
 ```
 
 Response `202`:

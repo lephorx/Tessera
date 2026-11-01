@@ -99,7 +99,29 @@ chmod 600 "$INSTALL_DIR/.env"
 say "Starting Tessera…"
 cd "$INSTALL_DIR"
 docker compose up --build -d
+
+# Creating the first account needs the one-time setup code the API prints to
+# its log, so nobody else on the network can claim the admin account first.
+SETUP_CODE=
+tries=0
+while [ $tries -lt 45 ]; do
+  SETUP_CODE=$(docker compose logs --no-color api 2>/dev/null | sed -n 's/.*Setup code: \([A-Z0-9-]*\).*/\1/p' | tail -n 1)
+  [ -n "$SETUP_CODE" ] && break
+  tries=$((tries + 1))
+  sleep 2
+done
+
 say "Tessera is ready at http://localhost:$WEB_PORT"
+if [ -n "$SETUP_CODE" ]; then
+  say ""
+  say "  Setup code: $SETUP_CODE"
+  say ""
+  say "Enter it on the setup page to create your account (shown again by:"
+  say "  cd $INSTALL_DIR && docker compose logs api | grep \"Setup code\")."
+else
+  say "To create your account you need the setup code from the log:"
+  say "  cd $INSTALL_DIR && docker compose logs api | grep \"Setup code\""
+fi
 say "Open it, create your account, then set up public access (Playit) right in the dashboard."
 say "Installation: $INSTALL_DIR"
 say "Usage guide: https://lephor.com/wiki/cscm/usage"

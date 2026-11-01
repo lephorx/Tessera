@@ -11,7 +11,10 @@ state to disk on disconnect) — a ``warning`` key is included in those response
 Requires the ``nbtlib`` package (pip install nbtlib).
 """
 
+import gzip
+import io
 import json
+import os
 import re
 import sqlite3
 import time
@@ -19,6 +22,7 @@ from pathlib import Path
 
 import docker_manager
 import properties_manager
+import safe_paths
 from db import get_db
 from docker_manager import server_data_dir
 from logger import get_logger
@@ -95,13 +99,49 @@ _EFFECT_ID_RE = re.compile(r"^[a-z0-9_:.]+$")
 _VALID_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,16}$")
 
 
+# The server folder is shared with the Minecraft container, so anything in it
+# may be a symlink planted there. Files are only read, written and deleted
+# through safe_paths, which never follows one.
+def _rel(server_id: int, path: Path | str) -> str:
+    return safe_paths.relative(server_data_dir(server_id), Path(server_data_dir(server_id)) / path)
+
+
+def _file_exists(server_id: int, path: Path | str) -> bool:
+    try:
+        return safe_paths.is_file(server_data_dir(server_id), _rel(server_id, path))
+    except safe_paths.UnsafePath:
+        return False
+
+
+def _read_file(server_id: int, path: Path | str) -> bytes:
+    return safe_paths.read_bytes(server_data_dir(server_id), _rel(server_id, path))
+
+
+def _write_file(server_id: int, path: Path | str, data: bytes) -> None:
+    safe_paths.write_bytes(server_data_dir(server_id), _rel(server_id, path), data)
+
+
+def _delete_file(server_id: int, path: Path | str) -> None:
+    """Remove a file (a link itself, never its target); missing is fine."""
+    names = safe_paths.parts(_rel(server_id, path))
+    try:
+        dir_fd = safe_paths.open_dir(server_data_dir(server_id), names[:-1])
+    except FileNotFoundError:
+        return
+    try:
+        os.unlink(names[-1], dir_fd=dir_fd)
+    except FileNotFoundError:
+        pass
+    finally:
+        os.close(dir_fd)
+
+
 def _read_json(server_id: int, filename: str) -> list:
-    path = Path(server_data_dir(server_id)) / filename
-    if not path.exists():
+    if not _file_exists(server_id, filename):
         return []
     try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
+        return json.loads(_read_file(server_id, filename))
+    except (ValueError, OSError):
         return []
 
 
@@ -163,8 +203,7 @@ def _require_running(server_id: int) -> tuple[bool, str]:
 
 
 def _write_json(server_id: int, filename: str, data: list) -> None:
-    path = Path(server_data_dir(server_id)) / filename
-    path.write_text(json.dumps(data, indent=2))
+    _write_file(server_id, filename, json.dumps(data, indent=2).encode())
 
 
 # ── Bedrock event log (schema: bedrock_player_events) ──────────────────────────
@@ -399,8 +438,7 @@ def ban_remove(server_id: int, username: str) -> dict:
             log.warning("RCON pardon failed for server_id=%d, falling back to file edit: %s", server_id, exc)
 
     # Server stopped (or RCON failed) — edit banned-players.json directly.
-    path = Path(server_data_dir(server_id)) / "banned-players.json"
-    if not path.exists():
+    if not _file_exists(server_id, "banned-players.json"):
         return {"success": True, "message": f"{username} was not banned"}
     bans = _read_json(server_id, "banned-players.json")
     before = len(bans)
@@ -408,8 +446,8 @@ def ban_remove(server_id: int, username: str) -> dict:
     if len(bans) == before:
         return {"success": True, "message": f"{username} was not banned"}
     try:
-        path.write_text(json.dumps(bans, indent=2))
-    except OSError as exc:
+        _write_json(server_id, "banned-players.json", bans)
+    except (OSError, safe_paths.UnsafePath) as exc:
         return {"success": False, "message": f"Could not write banned-players.json: {exc}"}
     return {"success": True, "message": f"Unbanned {username}"}
 
@@ -463,10 +501,18 @@ def _player_dat_old(server_id: int, uuid: str) -> Path:
     return _player_file(server_id, "playerdata", f"{uuid}.dat_old")
 
 
+# usercache.json is written by the server, so its UUIDs become file names
+# only when they look like UUIDs (no "../" or slashes).
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$")
+
+
 def _lookup_uuid(server_id: int, username: str) -> str | None:
     for entry in _read_json(server_id, "usercache.json"):
-        if entry.get("name", "").lower() == username.lower():
-            return entry.get("uuid")
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("name", "")).lower() == username.lower():
+            uuid = entry.get("uuid")
+            return uuid if isinstance(uuid, str) and _UUID_RE.match(uuid) else None
     return None
 
 
@@ -481,14 +527,18 @@ def _nbt_open(server_id: int, username: str):
             "they must have joined the server at least once"
         )
     dat = _player_dat(server_id, uuid)
-    if not dat.exists():
+    if not _file_exists(server_id, dat):
         dat_old = _player_dat_old(server_id, uuid)
-        if dat_old.exists():
+        if _file_exists(server_id, dat_old):
             dat = dat_old
         else:
             return None, None, uuid, f"Player data file not found (UUID: {uuid})"
     try:
-        nbt_file = nbtlib.load(str(dat))
+        data = _read_file(server_id, dat)
+        fileobj = io.BytesIO(data)
+        if data[:2] == b"\x1f\x8b":
+            fileobj = gzip.GzipFile(fileobj=fileobj)
+        nbt_file = nbtlib.File.from_fileobj(fileobj, "big")
         # nbtlib 2.x: File IS the root compound — no ["" ] indirection needed
         return nbt_file, nbt_file, uuid, None
     except Exception as exc:
@@ -498,7 +548,13 @@ def _nbt_open(server_id: int, username: str):
 def _nbt_save(nbt_file, server_id: int, uuid: str) -> str | None:
     """Write NBT back to disk.  Returns an error string or ``None`` on success."""
     try:
-        nbt_file.save(str(_player_dat(server_id, uuid)))
+        buffer = io.BytesIO()
+        if nbt_file.gzipped:
+            with gzip.GzipFile(fileobj=buffer, mode="wb") as fileobj:
+                nbt_file.write(fileobj, nbt_file.byteorder)
+        else:
+            nbt_file.write(buffer, nbt_file.byteorder)
+        _write_file(server_id, _player_dat(server_id, uuid), buffer.getvalue())
         return None
     except Exception as exc:
         return str(exc)
@@ -911,12 +967,12 @@ def get_player_statistics(server_id: int, username: str) -> dict:
         }
 
     stats_path = _player_file(server_id, "stats", f"{uuid}.json")
-    if not stats_path.exists():
+    if not _file_exists(server_id, stats_path):
         return {"success": False, "message": f"Statistics file not found (UUID: {uuid})"}
 
     try:
-        payload = json.loads(stats_path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
+        payload = json.loads(_read_file(server_id, stats_path))
+    except (OSError, ValueError) as exc:
         return {"success": False, "message": f"Failed to read statistics: {exc}"}
 
     stats = payload.get("stats", {}) if isinstance(payload, dict) else {}
@@ -1007,32 +1063,32 @@ def delete_player_data(server_id: int, username: str, targets: list[str]) -> dic
                 return {"success": False, "message": save_err}
 
     if "playerdata" in normalized:
-        if dat_path.exists() or dat_old_path.exists():
+        if _file_exists(server_id, dat_path) or _file_exists(server_id, dat_old_path):
             try:
-                dat_path.unlink(missing_ok=True)
-                dat_old_path.unlink(missing_ok=True)
+                _delete_file(server_id, dat_path)
+                _delete_file(server_id, dat_old_path)
                 deleted.append("playerdata")
-            except OSError as exc:
+            except (OSError, safe_paths.UnsafePath) as exc:
                 return {"success": False, "message": f"Could not delete playerdata: {exc}"}
         else:
             not_found.append("playerdata")
 
     if "statistics" in normalized:
-        if stats_path.exists():
+        if _file_exists(server_id, stats_path):
             try:
-                stats_path.unlink()
+                _delete_file(server_id, stats_path)
                 deleted.append("statistics")
-            except OSError as exc:
+            except (OSError, safe_paths.UnsafePath) as exc:
                 return {"success": False, "message": f"Could not delete statistics: {exc}"}
         else:
             not_found.append("statistics")
 
     if "advancements" in normalized:
-        if advancements_path.exists():
+        if _file_exists(server_id, advancements_path):
             try:
-                advancements_path.unlink()
+                _delete_file(server_id, advancements_path)
                 deleted.append("advancements")
-            except OSError as exc:
+            except (OSError, safe_paths.UnsafePath) as exc:
                 return {"success": False, "message": f"Could not delete advancements: {exc}"}
         else:
             not_found.append("advancements")

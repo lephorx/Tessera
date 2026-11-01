@@ -10,6 +10,7 @@ import {
   Copy,
   Check,
   Hash,
+  Terminal,
   User,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -140,6 +141,7 @@ interface SetupFormProps {
 }
 
 function SetupForm({ onSuccess }: SetupFormProps) {
+  const [setupCode, setSetupCode] = useState("")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
@@ -157,7 +159,7 @@ function SetupForm({ onSuccess }: SetupFormProps) {
 
     setSubmitting(true)
     try {
-      const { ok, data } = await authApi.setup(username, password)
+      const { ok, data } = await authApi.setup(username, password, setupCode)
       if (!ok) {
         setError(data.error ?? "Setup failed.")
         return
@@ -177,6 +179,27 @@ function SetupForm({ onSuccess }: SetupFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* proves the person signing up runs this machine: anyone on the
+          network could otherwise open the page first and become admin */}
+      <div className="space-y-1.5">
+        <Field
+          id="setup-code"
+          label="Setup code"
+          icon={Terminal}
+          autoComplete="one-time-code"
+          autoCapitalize="characters"
+          spellCheck={false}
+          value={setupCode}
+          onChange={(e) => setSetupCode(e.target.value)}
+          placeholder="Setup code (e.g. ABCD-EFGH-JKLM)"
+          required
+        />
+        <p className="text-xs text-muted-foreground">
+          The installer shows it when Tessera starts. Lost it? Run{" "}
+          <code className="font-mono">docker compose logs api | grep &quot;Setup code&quot;</code>{" "}
+          in the installation folder.
+        </p>
+      </div>
       <Field
         id="setup-username"
         label="Username"
