@@ -12,6 +12,9 @@
 #   - optionally: world data, backups and the database (asks separately)
 #   - optionally: the downloaded Minecraft and Playit images
 #
+# Installed from a Linux package? Run "sudo tessera uninstall", then remove the
+# package (apt remove tessera, dnf remove tessera, ...).
+#
 # It does not touch Docker itself, other containers, or your Playit / Cloudflare
 # accounts. Delete your servers in the dashboard first so CSCM removes their
 # Playit tunnels and Cloudflare DNS records.
@@ -87,6 +90,7 @@ find_installs() {
 choose_install() {
   default=
   is_cscm_dir "$HOME/cscm" && default=$HOME/cscm
+  is_cscm_dir /opt/tessera && default=/opt/tessera  # the Linux packages
   ask "Tessera installation directory (or 's' to search this computer)" "${default:-s}"
   case "$ANSWER" in
     s|S|search) ;;

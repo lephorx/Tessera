@@ -235,6 +235,7 @@ def _run_helper(info: dict) -> None:
         name=UPDATER_NAME,
         detach=True,
         labels={"cscm.updater": "true"},
+        security_opt=["label=disable"],  # SELinux: the socket and the checkout
         environment={"CSCM_DIR": wd, "CSCM_PROJECT": info["project"]},
         working_dir=wd,
         volumes={

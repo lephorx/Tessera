@@ -3,6 +3,9 @@ services:
     build: ./backend
     restart: unless-stopped
     env_file: .env
+    # SELinux (Fedora, RHEL) would block the Docker socket and the data folders
+    security_opt:
+      - label:disable
     environment:
       SERVERS_DIR: /data/servers
       BACKUPS_DIR: /data/backups

@@ -1,0 +1,47 @@
+# Builds the Linux packages (.deb, .rpm, Arch) and publishes them as the GitHub
+# release v<backend/VERSION>. Runs when VERSION or the packaging changes on main.
+# The files are also attached without the version in their names, so
+# https://github.com/lephorx/Tessera/releases/latest/download/tessera.deb
+# (and tessera.rpm, tessera.pkg.tar.zst) always points at the newest one.
+name: Linux packages
+
+on:
+  push:
+    branches: [main]
+    paths: [backend/VERSION, packaging/linux/**, .github/workflows/packages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build packages
+        run: |
+          VERSION=$(tr -d '[:space:]' < backend/VERSION)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          mkdir -p dist
+          for p in deb rpm archlinux; do
+            docker run --rm -v "$PWD:/src" -w /src -e VERSION="$VERSION" \
+              goreleaser/nfpm:v2.48.0 pkg -f packaging/linux/nfpm.yaml -p "$p" -t dist
+          done
+          cp dist/*.deb dist/tessera.deb
+          cp dist/*.rpm dist/tessera.rpm
+          cp dist/*.pkg.tar.zst dist/tessera.pkg.tar.zst
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v$VERSION"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Tessera $VERSION" \
+              --notes "Linux packages for Tessera $VERSION. Install guide: https://github.com/lephorx/Tessera#linux-packages"
+          fi
+          gh release upload "$TAG" dist/* --clobber

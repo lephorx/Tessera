@@ -26,7 +26,7 @@ only publishes the dashboard port.
 
 ## Guided installation
 
-You need Docker (with Compose) and Git. On macOS or Linux, run:
+On Linux or macOS, run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/lephorx/Tessera/main/scripts/install.sh | sh
@@ -40,14 +40,17 @@ less install.sh
 sh install.sh
 ```
 
-The installer:
+**On Linux** the installer asks which distribution you use (it suggests the one
+it detects) and installs the matching [package](#linux-packages). The package
+installs Docker and Git if they're missing, builds and starts Tessera, and
+shows the **setup code** you need to create your account. Pick "Something
+else" for a distribution without a package; that works like macOS below.
 
-1. checks that Git and Docker are installed and Docker is running;
-2. asks one question: install with the defaults (Tessera in `~/cscm`, data in
-   `~/cscm-data`, dashboard on port 3000), or pick the folders and port;
-3. downloads Tessera from `https://github.com/lephorx/Tessera`, writes `.env`
-   and starts the stack;
-4. shows the **setup code** you need to create your account.
+**On macOS** (and "Something else") you need Docker with Compose and Git. The
+installer asks one question: install with the defaults (Tessera in `~/cscm`,
+data in `~/cscm-data`, dashboard on port 3000), or pick the folders and port.
+Then it downloads Tessera from `https://github.com/lephorx/Tessera`, writes
+`.env`, starts it and shows the setup code.
 
 Open `http://localhost:3000`, enter the setup code, create your account and
 scan the QR code with your authenticator app. The dashboard then walks you
@@ -56,17 +59,22 @@ agent that Tessera runs for you (paste its `SECRET_KEY`) or one you already
 run, and optional Cloudflare custom DNS. Progress is saved as you go. Change
 it later from the settings button in the top bar.
 
-On Windows, run the installer from WSL 2 with Docker Desktop's WSL integration
-turned on. On macOS and Windows, turn on host networking in Docker Desktop
+On Windows, run the installer in WSL 2 with Docker Desktop's WSL integration
+turned on, and pick "Something else" (it's suggested there): the packages would
+install a second Docker next to Docker Desktop. On macOS and Windows, turn on host networking in Docker Desktop
 before letting Tessera run the Playit agent.
 
 Lost the setup code? It stays in the log until the account exists:
+`sudo tessera setup-code` (Linux packages), or
 
 ```sh
 cd ~/cscm && docker compose logs api | grep "Setup code"
 ```
 
 ### Uninstall
+
+Installed from a Linux package: `sudo tessera uninstall`, then remove the
+package. Otherwise:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/lephorx/Tessera/main/scripts/uninstall.sh | sh
@@ -76,6 +84,93 @@ It removes the Minecraft and Playit containers Tessera created, the dashboard
 containers and images, and the installation folder. It asks separately before
 deleting worlds, backups and the database. Delete your servers in the dashboard
 first so Tessera removes their Playit tunnels and Cloudflare DNS records.
+
+## Linux packages
+
+Each package installs everything Tessera needs: Docker, Docker Compose and Git
+from your distribution, then Tessera itself in `/opt/tessera` (settings in
+`/opt/tessera/.env`), with worlds, backups and the database in
+`/var/lib/tessera`. It starts Docker, builds and starts Tessera (a few minutes
+the first time), and prints the dashboard address and the setup code. Pick
+yours:
+
+<details>
+<summary><b>Debian, Ubuntu, Linux Mint, Pop!_OS</b> (.deb)</summary>
+
+```sh
+curl -fsSLO https://github.com/lephorx/Tessera/releases/latest/download/tessera.deb
+sudo apt update && sudo apt install ./tessera.deb
+```
+
+Debian 12 has no Docker Compose v2 package; Tessera downloads Docker's own
+build (checked against its published checksum).
+</details>
+
+<details>
+<summary><b>Fedora</b> (.rpm)</summary>
+
+```sh
+sudo dnf install https://github.com/lephorx/Tessera/releases/latest/download/tessera.rpm
+```
+</details>
+
+<details>
+<summary><b>RHEL, Rocky Linux, AlmaLinux, CentOS Stream</b> (.rpm)</summary>
+
+These ship no Docker, so add Docker's repository first (use `rhel` instead of
+`centos` in the URL on RHEL):
+
+```sh
+sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo dnf install https://github.com/lephorx/Tessera/releases/latest/download/tessera.rpm
+```
+</details>
+
+<details>
+<summary><b>openSUSE</b> (.rpm)</summary>
+
+```sh
+curl -fsSLO https://github.com/lephorx/Tessera/releases/latest/download/tessera.rpm
+sudo zypper install --allow-unsigned-rpm ./tessera.rpm
+```
+</details>
+
+<details>
+<summary><b>Arch, Manjaro, EndeavourOS</b> (.pkg.tar.zst)</summary>
+
+```sh
+curl -fsSLO https://github.com/lephorx/Tessera/releases/latest/download/tessera.pkg.tar.zst
+sudo pacman -U tessera.pkg.tar.zst
+```
+</details>
+
+Other distributions: install Docker (with Compose) and Git, then use the
+[guided installation](#guided-installation) and pick "Something else".
+
+The packages add the `tessera` command:
+
+| Command | What it does |
+| --- | --- |
+| `sudo tessera status` | Is it running, and on which port |
+| `sudo tessera setup-code` | The code for creating your account |
+| `sudo tessera logs` | Follow the logs |
+| `sudo tessera start`, `stop`, `restart` | Start or stop the dashboard |
+| `sudo tessera update` | Download the newest version (the dashboard's update button works too) |
+| `sudo tessera port 8080` | Move the dashboard to another port |
+| `sudo tessera setup` | Set up again or repair, e.g. after a failed first start |
+| `sudo tessera uninstall` | Remove Tessera, asking before it deletes worlds and backups |
+
+Removing the package (`apt remove`, `dnf remove`, `zypper remove`,
+`pacman -R`) stops Tessera and its servers and keeps everything else.
+`apt purge` also deletes `/opt/tessera` and Tessera's containers. Worlds and
+backups in `/var/lib/tessera` are only deleted by `tessera uninstall` when you
+confirm it.
+
+The packages are built by `.github/workflows/packages.yml` from
+`packaging/linux/` whenever `backend/VERSION` changes, and published as a
+GitHub release.
 
 ## Manual installation
 

@@ -1,0 +1,279 @@
+#!/bin/sh
+# tessera: sets up and manages Tessera installed from the Linux packages
+# (.deb, .rpm, Arch). Tessera itself is a git checkout in /opt/tessera, so the
+# dashboard's one-click updates keep working; worlds, backups and the database
+# live in /var/lib/tessera. Run "tessera help" for the commands.
+set -eu
+
+APP_DIR=/opt/tessera
+DATA_DIR=/var/lib/tessera
+REPO_URL=${TESSERA_REPO_URL:-https://github.com/lephorx/Tessera.git}
+DOCS=https://github.com/lephorx/Tessera#guided-installation
+PROJECT=tessera
+
+# Used only when the distribution has no Docker Compose v2 or Buildx package
+# (Debian 12, for example). Pinned with Docker's published SHA-256.
+COMPOSE_VERSION=v5.6.1
+COMPOSE_SHA256_x86_64=47737f4236e6d3ccea7291995203f8f018058783b4c3a9469119811a0b5db8c0
+COMPOSE_SHA256_aarch64=42cfa75f51ad0ccf290bad37899e0038a8c10a0069e85233ecc1d53e3ff1347d
+BUILDX_VERSION=v0.38.1
+BUILDX_SHA256_amd64=e25d5cd675092bb5d1d03632fdc46cdf3fede7b514dc5f023a105e00d3ce5ad4
+BUILDX_SHA256_arm64=3b83b3731916ba433feccaaa689fe5bcdc81c641d92c8e6c2ea865dfa141c97a
+PLUGIN_DIR=/usr/local/lib/docker/cli-plugins
+
+say() { printf '%s\n' "$*"; }
+fail() { say "Error: $*" >&2; exit 1; }
+need_root() { [ "$(id -u)" -eq 0 ] || fail "Run this as root: sudo tessera $*"; }
+installed() { [ -f "$APP_DIR/docker-compose.yml" ]; }
+compose() { (cd "$APP_DIR" && docker compose -p "$PROJECT" "$@"); }
+
+env_value() {
+  [ -f "$APP_DIR/.env" ] || return 0
+  sed -n "s/^$1='\{0,1\}\([^']*\)'\{0,1\}\$/\1/p" "$APP_DIR/.env" | tail -n 1
+}
+
+lan_ip() {
+  ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1
+}
+
+port() { p=$(env_value WEB_PORT); say "${p:-3000}"; }
+
+# Starts the Docker service and waits until it answers.
+start_docker() {
+  if ! docker info >/dev/null 2>&1; then
+    if [ -d /run/systemd/system ]; then
+      systemctl enable --now docker.service >/dev/null 2>&1 || true
+    elif command -v rc-service >/dev/null 2>&1; then
+      rc-update add docker default >/dev/null 2>&1 || true
+      rc-service docker start >/dev/null 2>&1 || true
+    elif command -v service >/dev/null 2>&1; then
+      service docker start >/dev/null 2>&1 || true
+    fi
+  fi
+  tries=0
+  until docker info >/dev/null 2>&1; do
+    tries=$((tries + 1))
+    [ $tries -lt 30 ] || fail "Docker doesn't start. Check it with: systemctl status docker"
+    sleep 1
+  done
+}
+
+# Downloads a Docker CLI plugin and checks it against the pinned SHA-256.
+fetch_plugin() {
+  name=$1 url=$2 sum=$3
+  [ -n "$sum" ] || fail "No $name download for $(uname -m). Install Docker's $name plugin, then run: sudo tessera setup"
+  say "Installing Docker's $name plugin ($url)…"
+  mkdir -p "$PLUGIN_DIR"
+  tmp=$(mktemp)
+  curl -fsSL --retry 3 -o "$tmp" "$url" || { rm -f "$tmp"; fail "Couldn't download $name."; }
+  got=$(sha256sum "$tmp" | cut -d' ' -f1)
+  [ "$got" = "$sum" ] || { rm -f "$tmp"; fail "The $name download doesn't match its checksum."; }
+  install -m 755 "$tmp" "$PLUGIN_DIR/docker-$name"
+  rm -f "$tmp"
+}
+
+install_compose() {
+  arch=$(uname -m)
+  eval "sum=\${COMPOSE_SHA256_$arch:-}"
+  fetch_plugin compose "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-linux-$arch" "$sum"
+}
+
+install_buildx() {
+  case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) arch=none ;; esac
+  eval "sum=\${BUILDX_SHA256_$arch:-}"
+  fetch_plugin buildx "https://github.com/docker/buildx/releases/download/$BUILDX_VERSION/buildx-$BUILDX_VERSION.linux-$arch" "$sum"
+}
+
+# Docker Compose v2 and Buildx (to build Tessera's images): the distribution's
+# packages when it has them, Docker's own builds otherwise.
+ensure_plugins() {
+  docker compose version >/dev/null 2>&1 || install_compose
+  docker buildx version >/dev/null 2>&1 || install_buildx
+}
+
+# A free port for the dashboard, starting at 3000.
+free_port() {
+  p=3000
+  if command -v ss >/dev/null 2>&1; then
+    while [ $p -lt 3100 ] && [ -n "$(ss -Hltn "sport = :$p" 2>/dev/null)" ]; do p=$((p + 1)); done
+  fi
+  say $p
+}
+
+# Lets containers use the data folders where SELinux is enforcing (Fedora, RHEL).
+label_data() {
+  command -v getenforce >/dev/null 2>&1 && [ "$(getenforce 2>/dev/null)" = Enforcing ] || return 0
+  if command -v semanage >/dev/null 2>&1; then
+    semanage fcontext -a -t container_file_t "$DATA_DIR(/.*)?" 2>/dev/null \
+      || semanage fcontext -m -t container_file_t "$DATA_DIR(/.*)?" 2>/dev/null || true
+    restorecon -R "$DATA_DIR" 2>/dev/null || true
+  else
+    chcon -R -t container_file_t "$DATA_DIR" 2>/dev/null || true
+  fi
+}
+
+write_env() {
+  p=$(free_port)
+  umask 077
+  cat > "$APP_DIR/.env" <<EOF
+# Tessera settings. Playit and Cloudflare are set up in the dashboard after you
+# create your account, or add them here and run: sudo tessera restart
+WEB_PORT='$p'
+DATA_DIR_HOST='$DATA_DIR/data'
+SERVERS_DIR_HOST='$DATA_DIR/servers'
+BACKUPS_DIR_HOST='$DATA_DIR/backups'
+PLAYIT_HEADLESS='true'
+JWT_LIFETIME_HOURS='8'
+TOTP_ISSUER='Tessera'
+EOF
+  chmod 600 "$APP_DIR/.env"
+}
+
+setup_code() {
+  docker logs "$(compose ps -q api 2>/dev/null)" 2>&1 \
+    | sed -n 's/.*Setup code: \([A-Z0-9-]*\).*/\1/p' | tail -n 1
+}
+
+show_ready() {
+  code=
+  tries=0
+  while [ $tries -lt 45 ]; do
+    code=$(setup_code 2>/dev/null || true)
+    [ -n "$code" ] && break
+    tries=$((tries + 1))
+    sleep 2
+  done
+  say ""
+  say "Tessera is running: http://localhost:$(port)"
+  say "From another device on your network: http://$(lan_ip):$(port)"
+  if [ -n "$code" ]; then
+    say ""
+    say "  Setup code: $code"
+    say ""
+    say "Enter it on the setup page to create your account. Show it again with: sudo tessera setup-code"
+  else
+    say "Create your account with the setup code from: sudo tessera setup-code"
+  fi
+  say "Manage Tessera with the tessera command (tessera help)."
+}
+
+up() {
+  # Compose builds the images when they're missing. A Buildx too old for the
+  # distribution's Compose is replaced by Docker's own build once.
+  log=$(mktemp)
+  { compose up -d "$@" 2>&1 && echo "tessera-status=0" || echo "tessera-status=$?"; } \
+    | tee "$log" | grep -v '^tessera-status=' || true
+  status=$(sed -n 's/^tessera-status=//p' "$log")
+  if [ "$status" != 0 ] && grep -qi buildx "$log" && [ ! -x "$PLUGIN_DIR/docker-buildx" ]; then
+    rm -f "$log"
+    install_buildx
+    compose up -d "$@"
+    return
+  fi
+  rm -f "$log"
+  [ "$status" = 0 ]
+}
+
+cmd_setup() {
+  need_root setup
+  command -v docker >/dev/null 2>&1 || fail "Docker is missing. Install your distribution's Docker package, then run: sudo tessera setup"
+  start_docker
+  ensure_plugins
+  mkdir -p "$DATA_DIR/data" "$DATA_DIR/servers" "$DATA_DIR/backups"
+  chmod 700 "$DATA_DIR"
+  label_data
+  fresh=no
+  if ! installed; then
+    if [ -e "$APP_DIR" ] && [ -n "$(ls -A "$APP_DIR" 2>/dev/null)" ]; then
+      fail "$APP_DIR exists but isn't a Tessera installation. Move it away, then run: sudo tessera setup"
+    fi
+    say "Downloading Tessera from $REPO_URL…"
+    git clone --depth 1 "$REPO_URL" "$APP_DIR" || fail "Couldn't download Tessera. Check the internet connection, then run: sudo tessera setup"
+    fresh=yes
+  fi
+  [ -f "$APP_DIR/.env" ] || write_env
+  if [ $fresh = yes ]; then
+    say "Building and starting Tessera. The first time takes a few minutes…"
+  else
+    say "Starting Tessera…"
+  fi
+  up || fail "Tessera didn't start. See: sudo tessera logs"
+  show_ready
+}
+
+cmd_update() {
+  need_root update
+  installed || fail "Tessera isn't set up yet. Run: sudo tessera setup"
+  start_docker
+  say "Downloading the newest Tessera…"
+  git -C "$APP_DIR" pull --ff-only || fail "git pull failed. Local changes in $APP_DIR can block it."
+  up --build || fail "Tessera didn't start. See: sudo tessera logs"
+  say "Tessera is up to date: $(cat "$APP_DIR/backend/VERSION")"
+}
+
+cmd_port() {
+  need_root port
+  installed || fail "Tessera isn't set up yet. Run: sudo tessera setup"
+  case "${1:-}" in ''|*[!0-9]*) fail "Usage: sudo tessera port <number>" ;; esac
+  [ "$1" -ge 1 ] && [ "$1" -le 65535 ] || fail "The port must be between 1 and 65535."
+  if grep -q '^WEB_PORT=' "$APP_DIR/.env"; then
+    sed -i "s/^WEB_PORT=.*/WEB_PORT='$1'/" "$APP_DIR/.env"
+  else
+    printf "WEB_PORT='%s'\n" "$1" >> "$APP_DIR/.env"
+  fi
+  compose up -d
+  say "Tessera is now on http://localhost:$1"
+}
+
+# Stops the dashboard and the Minecraft servers (used when the package is removed).
+cmd_stop_all() {
+  installed && docker info >/dev/null 2>&1 || return 0
+  ids=$(docker ps -q --filter label=cscm.managed=true)
+  # shellcheck disable=SC2086
+  [ -z "$ids" ] || docker stop $ids >/dev/null || true
+  compose stop >/dev/null 2>&1 || true
+}
+
+usage() {
+  cat <<EOF
+Tessera$( [ -f "$APP_DIR/backend/VERSION" ] && printf ' %s' "$(cat "$APP_DIR/backend/VERSION")" ), the Minecraft server manager
+
+  tessera status          Is it running, and where
+  tessera setup-code      The code for creating your account
+  tessera logs [api|web]  Follow the logs
+  tessera start | stop | restart
+  tessera update          Download the newest version (the dashboard can do this too)
+  tessera port <number>   Move the dashboard to another port
+  tessera setup           Set up again or repair (after the package installed it)
+  tessera uninstall       Remove Tessera and, if you want, your worlds and backups
+
+Files: $APP_DIR (settings in .env), data in $DATA_DIR. Docs: $DOCS
+EOF
+}
+
+case "${1:-help}" in
+  setup) cmd_setup ;;
+  status)
+    installed || fail "Tessera isn't set up yet. Run: sudo tessera setup"
+    compose ps
+    say "Dashboard: http://localhost:$(port)"
+    ;;
+  setup-code)
+    code=$(setup_code)
+    [ -n "$code" ] && say "$code" || say "No setup code: the account already exists (or Tessera isn't running)."
+    ;;
+  logs) shift; compose logs -f --tail 200 "$@" ;;
+  start) need_root start; start_docker; compose up -d; say "Tessera is running: http://localhost:$(port)" ;;
+  stop) need_root stop; compose stop ;;
+  restart) need_root restart; compose up -d; compose restart; say "Tessera is running: http://localhost:$(port)" ;;
+  update) cmd_update ;;
+  port) need_root port; cmd_port "${2:-}" ;;
+  stop-all) need_root stop-all; cmd_stop_all ;;
+  uninstall)
+    need_root uninstall
+    sh "$APP_DIR/scripts/uninstall.sh" || exit 1
+    say "Remove the package too: apt remove tessera, dnf remove tessera, zypper remove tessera or pacman -R tessera."
+    ;;
+  help|-h|--help) usage ;;
+  *) usage; exit 1 ;;
+esac

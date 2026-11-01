@@ -43,6 +43,92 @@ env_line() {
   printf "%s='%s'\n" "$key" "$escaped"
 }
 
+RELEASES=https://github.com/lephorx/Tessera/releases/latest/download
+
+# The distribution this looks like, as a number of the menu below.
+detect_distro() {
+  # WSL uses Docker Desktop's Docker; the packages would install a second one
+  grep -qi microsoft /proc/version 2>/dev/null && { echo 6; return; }
+  [ -r /etc/os-release ] || { echo 6; return; }
+  ids=$(. /etc/os-release; printf ' %s %s ' "${ID:-}" "${ID_LIKE:-}")
+  case "$ids" in
+    *" debian "*|*" ubuntu "*) echo 1 ;;
+    *" fedora "*) case "$ids" in *" rhel "*|*" centos "*) echo 3 ;; *) echo 2 ;; esac ;;
+    *" rhel "*|*" centos "*) echo 3 ;;
+    *opensuse*|*" suse "*|*" sles "*) echo 4 ;;
+    *" arch "*) echo 5 ;;
+    *) echo 6 ;;
+  esac
+}
+
+# Root commands: directly as root, otherwise through sudo.
+as_root() {
+  if [ "$(id -u)" -eq 0 ]; then "$@"; else
+    command -v sudo >/dev/null 2>&1 || fail "sudo is required (or run this as root)."
+    sudo "$@"
+  fi
+}
+
+# Installs Tessera as the distribution's package: it brings in Docker and git,
+# sets Tessera up in /opt/tessera and adds the tessera command.
+install_package() {
+  choice=$1
+  case $choice in
+    1) file=tessera.deb ;;
+    2|3|4) file=tessera.rpm ;;
+    5) file=tessera.pkg.tar.zst ;;
+  esac
+  command -v curl >/dev/null 2>&1 || fail "curl is required."
+  tmp=$(mktemp -d)
+  chmod 755 "$tmp"
+  say "Downloading $RELEASES/$file…"
+  curl -fsSL --retry 3 -o "$tmp/$file" "$RELEASES/$file" || fail "Couldn't download the package. Check the internet connection and retry."
+  chmod 644 "$tmp/$file"
+  say "Installing it. This asks for your password, installs Docker if needed and builds Tessera (a few minutes)…"
+  case $choice in
+    1) as_root apt-get update && as_root apt-get install -y "$tmp/$file" ;;
+    2) as_root dnf install -y "$tmp/$file" ;;
+    3)
+      # RHEL and its rebuilds ship no Docker: add Docker's own repository first.
+      if ! rpm -q docker-ce >/dev/null 2>&1 && ! rpm -q moby-engine >/dev/null 2>&1; then
+        say "Adding Docker's repository (download.docker.com)…"
+        repo=https://download.docker.com/linux/centos/docker-ce.repo
+        (. /etc/os-release; [ "${ID:-}" = rhel ]) && repo=https://download.docker.com/linux/rhel/docker-ce.repo
+        as_root dnf install -y dnf-plugins-core
+        as_root dnf config-manager --add-repo "$repo" 2>/dev/null \
+          || as_root dnf config-manager addrepo --from-repofile="$repo"
+        as_root dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      fi
+      as_root dnf install -y "$tmp/$file"
+      ;;
+    4) as_root zypper --non-interactive install --allow-unsigned-rpm "$tmp/$file" ;;
+    5) as_root pacman -U --needed --noconfirm "$tmp/$file" ;;
+  esac
+  rm -rf "$tmp"
+  say ""
+  say "Done. Manage Tessera with: tessera help"
+  exit 0
+}
+
+if [ "$(uname -s)" = Linux ]; then
+  DETECTED=$(detect_distro)
+  say "Tessera setup (Linux)"
+  say ""
+  say "Which Linux do you use?"
+  say "  1) Debian, Ubuntu, Linux Mint, Pop!_OS and other Debian-based (.deb)"
+  say "  2) Fedora (.rpm)"
+  say "  3) RHEL, Rocky Linux, AlmaLinux, CentOS Stream (.rpm, adds Docker's repository)"
+  say "  4) openSUSE (.rpm)"
+  say "  5) Arch, Manjaro, EndeavourOS (.pkg.tar.zst)"
+  say "  6) Something else, or WSL: install without a package (needs Docker and git already)"
+  ask "Number" "${TESSERA_DISTRO:-$DETECTED}"
+  case "$ANSWER" in
+    [1-5]) install_package "$ANSWER" ;;
+    6) ;;
+    *) fail "Please choose 1 to 6." ;;
+  esac
+fi
+
 need git
 need docker
 need sed

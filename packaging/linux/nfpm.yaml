@@ -1,0 +1,71 @@
+# Linux packages for Tessera: .deb (Debian, Ubuntu), .rpm (Fedora, RHEL-likes,
+# openSUSE) and .pkg.tar.zst (Arch). They bring in Docker and git, then the
+# install script downloads Tessera into /opt/tessera and starts it.
+# Built by .github/workflows/packages.yml: VERSION=$(cat backend/VERSION) nfpm pkg ...
+name: tessera
+arch: all
+platform: linux
+version: ${VERSION}
+release: 1
+section: games
+priority: optional
+maintainer: lephor <ramonzielke09@gmail.com>
+description: |-
+  Self-hosted Minecraft server manager.
+  Tessera runs a web dashboard for creating and running Minecraft servers in
+  Docker: backups, players, Playit.gg and Cloudflare addresses, and modpack
+  servers from Tessera Launcher.
+vendor: Tessera
+homepage: https://github.com/lephorx/Tessera
+license: MIT
+
+contents:
+  - src: packaging/linux/tessera
+    dst: /usr/bin/tessera
+    file_info:
+      mode: 0755
+  - src: LICENSE
+    dst: /usr/share/doc/tessera/LICENSE
+
+scripts:
+  postinstall: packaging/linux/postinstall.sh
+  preremove: packaging/linux/preremove.sh
+  postremove: packaging/linux/postremove.sh
+
+overrides:
+  deb:
+    depends:
+      - git
+      - curl
+      - ca-certificates
+      - iproute2
+      - docker.io | docker-ce | moby-engine
+    recommends:
+      - docker-compose-v2 | docker-compose-plugin | docker-compose (>= 2)
+      - docker-buildx | docker-buildx-plugin
+  rpm:
+    depends:
+      - git-core
+      - curl
+      - iproute
+      - (moby-engine or docker-ce or docker)
+    # plain names: zypper skips weak dependencies written as (a or b)
+    recommends:
+      - docker-compose
+      - docker-buildx
+  archlinux:
+    depends:
+      - git
+      - curl
+      - iproute2
+      - docker
+      - docker-compose
+      - docker-buildx
+
+archlinux:
+  packager: lephor <ramonzielke09@gmail.com>
+  scripts:
+    postupgrade: packaging/linux/postinstall.sh
+
+rpm:
+  group: Applications/System
