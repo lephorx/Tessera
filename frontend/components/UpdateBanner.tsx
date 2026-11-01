@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-const HELP_URL = "https://lephor.com/wiki/cscm/help"
+const HELP_URL = "https://github.com/lephorx/Tessera#updates"
 const HELP_FAILED = `${HELP_URL}#update-failed`
 const HELP_MANUAL = `${HELP_URL}#manual-update`
 const RECHECK_MS = 30 * 60 * 1000

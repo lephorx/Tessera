@@ -1,6 +1,6 @@
 #!/bin/sh
-# CSCM interactive installer, published at https://lephor.com/cscm/install.sh
-# Usage: curl -fsSL https://lephor.com/cscm/install.sh | sh
+# Tessera interactive installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/lephorx/Tessera/main/scripts/install.sh | sh
 set -eu
 umask 077
 
@@ -9,7 +9,7 @@ ANSWER=
 
 say() { printf '%s\n' "$*" >&2; }
 fail() { say "Error: $*"; exit 1; }
-need() { command -v "$1" >/dev/null 2>&1 || fail "$1 is required. See https://lephor.com/wiki/cscm/installation"; }
+need() { command -v "$1" >/dev/null 2>&1 || fail "$1 is required. See https://github.com/lephorx/Tessera#guided-installation"; }
 
 ask() {
   prompt=$1
@@ -51,7 +51,7 @@ docker info >/dev/null 2>&1 || fail "Start Docker and grant this user access to 
 
 case "$(uname -s)" in
   Linux|Darwin) PLATFORM=$(uname -s) ;;
-  *) fail "For Windows, use WSL 2 and follow https://lephor.com/wiki/cscm/installation" ;;
+  *) fail "For Windows, use WSL 2 and follow https://github.com/lephorx/Tessera#guided-installation" ;;
 esac
 
 say "Tessera setup ($PLATFORM)"
@@ -124,4 +124,4 @@ else
 fi
 say "Open it, create your account, then set up public access (Playit) right in the dashboard."
 say "Installation: $INSTALL_DIR"
-say "Usage guide: https://lephor.com/wiki/cscm/usage"
+say "Docs: https://github.com/lephorx/Tessera"
