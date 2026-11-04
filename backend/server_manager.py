@@ -56,6 +56,18 @@ def _slugify(name: str) -> str:
     return slug or "server"
 
 
+def _unique_slug(conn, base: str) -> str:
+    """The server's address name (its subdomain): base, or base-2, base-3… when another
+    server already has it. Names may repeat; addresses can't."""
+    taken = {r["slug"] for r in conn.execute("SELECT slug FROM servers WHERE slug = ? OR slug LIKE ?", (base, f"{base}-%"))}
+    if base not in taken:
+        return base
+    n = 2
+    while f"{base}-{n}" in taken:
+        n += 1
+    return f"{base}-{n}"
+
+
 def _split_bedrock_address(tunnel_address: str) -> tuple[str, int | None]:
     """Bedrock has no SRV-based port discovery, so playit.gg embeds the
     assigned port directly in the tunnel address as ``host:port``."""
@@ -180,6 +192,7 @@ def _create_server_record(
     rcon_password = secrets.token_urlsafe(24)
     try:
         with get_db() as conn:
+            subdomain = _unique_slug(conn, subdomain)
             cur = conn.execute(
                 "INSERT INTO servers"
                 " (name, slug, type, version, loader_version, serverport, mem_min_gb, mem_max_gb, rcon_password, status,"
@@ -192,7 +205,9 @@ def _create_server_record(
         log.info("Server record persisted: db_id=%d", db_server_id)
     except sqlite3.IntegrityError as exc:
         log.warning("Server creation conflict: %s", exc)
-        return {"success": False, "message": f"Port {server_port} is already in use by another server", "conflict": True}
+        if "serverport" in str(exc):
+            return {"success": False, "message": f"Port {server_port} is already in use by another server", "conflict": True}
+        return {"success": False, "message": f"Another server already uses the address name '{subdomain}'. Try again.", "conflict": True}
     except sqlite3.Error as exc:
         log.error("Database error while persisting server record: %s", exc)
         return {"success": False, "message": f"Database error: {exc}"}
@@ -528,7 +543,7 @@ def create_server_tunnel(db_server_id: int, region: str | None = None, subscript
     """
     try:
         with get_db() as conn:
-            row = conn.execute("SELECT name, serverport, type FROM servers WHERE id = ?", (db_server_id,)).fetchone()
+            row = conn.execute("SELECT name, slug, serverport, type FROM servers WHERE id = ?", (db_server_id,)).fetchone()
             existing = conn.execute("SELECT 1 FROM playit_tunnels WHERE server_id = ?", (db_server_id,)).fetchone()
     except sqlite3.Error as exc:
         log.error("Database error fetching server %d: %s", db_server_id, exc)
@@ -541,7 +556,8 @@ def create_server_tunnel(db_server_id: int, region: str | None = None, subscript
 
     server_name, server_port = row["name"], row["serverport"]
     is_bedrock = row["type"] in BEDROCK_TYPES
-    subdomain = _slugify(server_name)
+    # its address name: unique, unlike the name
+    subdomain = row["slug"] if "slug" in row.keys() and row["slug"] else _slugify(server_name)
 
     log.info("Creating PlayIT tunnel: name=%s, local_port=%d, region=%s, protocol=%s",
              subdomain, server_port, region or "default", "bedrock" if is_bedrock else "java")
