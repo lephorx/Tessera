@@ -86,6 +86,11 @@ try:
     server_manager.resync_dns_if_changed()
 except Exception:
     log.exception("Could not check the Cloudflare DNS records")
+# servers whose setup an update (or crash) cut off: carry on from where they were
+try:
+    server_manager.resume_provisioning()
+except Exception:
+    log.exception("Could not resume unfinished server setups")
 # keep looking for tunnel ports playit.gg hadn't published yet
 server_manager.retry_missing_ports()
 

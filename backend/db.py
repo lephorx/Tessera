@@ -61,6 +61,10 @@ def _migrate_schema() -> None:
             conn.execute("UPDATE servers SET eula_accepted_at = createdat WHERE eula_accepted_at IS NULL")
         if "eula_accepted_by" not in server_cols:
             conn.execute("ALTER TABLE servers ADD COLUMN eula_accepted_by INTEGER")
+        # set up but not finished (JSON of what the setup needs): resumed when the API starts
+        # again, e.g. after an update replaced it halfway (server_manager.resume_provisioning)
+        if "provision_pending" not in server_cols:
+            conn.execute("ALTER TABLE servers ADD COLUMN provision_pending TEXT")
 
 
 def fetch_server(server_id: int) -> sqlite3.Row | None:

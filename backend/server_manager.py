@@ -215,6 +215,50 @@ def _create_server_record(
     return {"success": True, "server_id": db_server_id, "subdomain": subdomain}
 
 
+def mark_provisioning(db_server_id: int, args: dict | None = None) -> None:
+    """Notes that the server's setup has started, with what it needs to finish (the PlayIT
+    subscription and agent, the first server.properties), so a restart can resume it."""
+    with get_db() as conn:
+        conn.execute("UPDATE servers SET provision_pending = ? WHERE id = ?", (json.dumps(args or {}), db_server_id))
+
+
+def _provisioned(db_server_id: int) -> None:
+    with get_db() as conn:
+        conn.execute("UPDATE servers SET provision_pending = NULL WHERE id = ?", (db_server_id,))
+
+
+def run_provisioning(db_server_id: int, subdomain: str, server_port: int, args: dict | None = None) -> dict:
+    """The setup after the database record: container, tunnel, DNS, then the first
+    server.properties. Finished or failed, it's no longer pending; killed halfway (an update
+    replacing the API), it stays pending and resume_provisioning picks it up."""
+    args = args or {}
+    try:
+        result = _provision_resources(db_server_id, subdomain, server_port, args.get("subscription"), args.get("agent"))
+        if result.get("success") and args.get("initial_properties"):
+            import properties_manager
+
+            properties_manager.apply_initial_properties(db_server_id, args["initial_properties"])
+        return result
+    finally:
+        _provisioned(db_server_id)
+
+
+def resume_provisioning() -> int:
+    """On start: carries on with every setup a restart (an update) cut off, from the step it
+    reached. Returns how many."""
+    with get_db() as conn:
+        rows = conn.execute("SELECT id, slug, serverport, provision_pending FROM servers WHERE provision_pending IS NOT NULL").fetchall()
+    for row in rows:
+        try:
+            args = json.loads(row["provision_pending"] or "{}")
+        except ValueError:
+            args = {}
+        log.info("Resuming the setup of server %d after a restart", row["id"])
+        progress_store.update(row["id"], action="provision", percent=10, step="Continuing the setup after Tessera restarted")
+        threading.Thread(target=run_provisioning, args=(row["id"], row["slug"], row["serverport"], args), daemon=True).start()
+    return len(rows)
+
+
 def _provision_resources(
     db_server_id: int,
     subdomain: str,
@@ -224,8 +268,9 @@ def _provision_resources(
 ) -> dict:
     """Create the Docker container, PlayIT tunnel, and optional DNS records.
 
-    Updates progress_store throughout so GET /api/servers/<id>/progress
-    can return live percentages to polling clients.
+    Each step that's already done (a resumed setup) is kept: the container, the tunnel and
+    the DNS records are made once. Updates progress_store throughout so
+    GET /api/servers/<id>/progress can return live percentages to polling clients.
     """
     # ── Step 2: Docker container ─────────────────────────────────────────────
     progress_store.update(db_server_id, action="provision", percent=15,
@@ -236,17 +281,23 @@ def _provision_resources(
         server_type = row["type"]
         is_bedrock = server_type in BEDROCK_TYPES
         local_only = bool(row["local_only"])
-        # default players and global bans, before the server first starts
-        try:
-            player_lists.seed_new_server(db_server_id, server_type, row["owner_id"])
-        except Exception:
-            log.exception("Could not add default players to server %d", db_server_id)
-        container_id = docker_manager.create_server_container(row)
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE servers SET container_id = ?, status = 'created' WHERE id = ?",
-                (container_id, db_server_id),
-            )
+        made = row["container_id"] and docker_manager.get_container(db_server_id) is not None
+        if made:
+            log.info("Server %d already has its container", db_server_id)
+            with get_db() as conn:
+                conn.execute("UPDATE servers SET status = 'created' WHERE id = ? AND status = 'provisioning'", (db_server_id,))
+        else:
+            # default players and global bans, before the server first starts
+            try:
+                player_lists.seed_new_server(db_server_id, server_type, row["owner_id"])
+            except Exception:
+                log.exception("Could not add default players to server %d", db_server_id)
+            container_id = docker_manager.create_server_container(row)
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE servers SET container_id = ?, status = 'created' WHERE id = ?",
+                    (container_id, db_server_id),
+                )
     except Exception as exc:
         log.error("Container creation failed for db_id=%d: %s", db_server_id, exc)
         with get_db() as conn:
@@ -271,6 +322,23 @@ def _provision_resources(
         }
 
     # ── Step 3: PlayIT tunnel ────────────────────────────────────────────────
+    with get_db() as conn:
+        had_tunnel = conn.execute("SELECT tunnel_address, external_port FROM playit_tunnels WHERE server_id = ?", (db_server_id,)).fetchone()
+        had_dns = conn.execute("SELECT name FROM dns_records WHERE server_id = ? AND record_type = 'CNAME'", (db_server_id,)).fetchone()
+    if had_tunnel:
+        # resumed after the tunnel was made: only what's left
+        tunnel_address, external_port = had_tunnel["tunnel_address"], had_tunnel["external_port"]
+        if had_dns:
+            connect_address, dns_warning = had_dns["name"], None
+        else:
+            progress_store.update(db_server_id, action="provision", percent=65, step="Setting up optional Cloudflare DNS")
+            connect_address, dns_warning = _create_optional_dns(db_server_id, subdomain, tunnel_address, external_port, is_bedrock)
+        if not is_bedrock and not external_port:
+            retry_port_later(db_server_id)
+        progress_store.update(db_server_id, action="provision", percent=100,
+                              step="Server provisioned successfully", status="completed", message=dns_warning)
+        return {"success": True, "message": "Server provisioned successfully", "server_id": db_server_id,
+                "connect_address": connect_address, "tunnel_address": tunnel_address, "external_port": external_port}
     progress_store.update(db_server_id, action="provision", percent=35,
                           step="Creating PlayIT tunnel")
     log.info("Creating PlayIT tunnel: name=%s, local_port=%d, protocol=%s", subdomain, server_port, "bedrock" if is_bedrock else "java")

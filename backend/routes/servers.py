@@ -17,6 +17,7 @@ import auth_manager
 from db import get_db
 from docker_manager import MODPACK_FILE, SERVER_TYPES, server_data_dir
 from logger import get_logger
+import server_manager
 from server_manager import (
     EULA_REQUIRED_MESSAGE,
     active_progress,
@@ -288,13 +289,11 @@ def create_server():
     progress_store.update(server_id, action="provision", percent=5,
                           step="Database record created")
 
-    # Remaining steps (async): container, PlayIT (skipped for local_only)
-    def _bg_provision():
-        result = _provision_resources(server_id, subdomain, port, subscription, agent)
-        if result.get("success") and initial_properties:
-            properties_manager.apply_initial_properties(server_id, initial_properties)
-
-    threading.Thread(target=_bg_provision, daemon=True).start()
+    # Remaining steps (async): container, PlayIT (skipped for local_only). Noted in the
+    # database first: an update restarting the API halfway resumes it on the next start.
+    args = {"subscription": subscription, "agent": agent, "initial_properties": initial_properties or None}
+    server_manager.mark_provisioning(server_id, args)
+    threading.Thread(target=server_manager.run_provisioning, args=(server_id, subdomain, port, args), daemon=True).start()
     log.info("Server provisioning started (background): db_id=%d", server_id)
     return jsonify({
         "success": True,
@@ -379,9 +378,8 @@ def create_server_from_pack():
     safe_paths.replace_bytes(server_data_dir(server_id), MODPACK_FILE, data)
     progress_store.update(server_id, action="provision", percent=5, step="Modpack uploaded")
 
-    threading.Thread(
-        target=lambda: _provision_resources(server_id, record["subdomain"], port, None, None), daemon=True
-    ).start()
+    server_manager.mark_provisioning(server_id)
+    threading.Thread(target=server_manager.run_provisioning, args=(server_id, record["subdomain"], port), daemon=True).start()
     return jsonify({"success": True, "message": "Server provisioning started", "server_id": server_id}), 202
 
 

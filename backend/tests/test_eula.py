@@ -27,8 +27,8 @@ class EulaTests(unittest.TestCase):
         self.provisioned = []
         self.patches += [
             mock.patch.object(servers, "authorize", fake_authorize),
-            mock.patch.object(servers, "_provision_resources", lambda *a, **kw: self.provisioned.append(a) or {"success": True}),
-            mock.patch.object(servers.threading, "Thread", lambda target, daemon: type("T", (), {"start": target})),
+            mock.patch.object(servers.server_manager, "run_provisioning", lambda *a, **kw: self.provisioned.append(a) or {"success": True}),
+            mock.patch.object(servers.threading, "Thread", lambda target, args=(), daemon=True: type("T", (), {"start": staticmethod(lambda: target(*args))})),
         ]
         for p in self.patches:
             p.start()
