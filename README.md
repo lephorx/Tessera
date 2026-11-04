@@ -205,6 +205,17 @@ needs the host's Docker socket to manage the Minecraft containers. After
 editing `.env`, run `docker compose restart api`. `GET /health` on the
 dashboard checks the API.
 
+## Changing the domain
+
+Change the Cloudflare domain or zone ID in **Settings**, or edit `CLOUDFLARE_BASE_DOMAIN`
+and `CLOUDFLARE_ZONE_ID` in `.env` and run `docker compose up -d` (Tessera notices the
+change when it starts). Either way, Tessera creates new records for every server with a
+public address (`survival.<new domain>` and its SRV record) and the dashboard shows the
+new addresses. The old records are **not deleted**: they stay in Cloudflare, so the old
+addresses keep working until you remove them there. Turning Cloudflare off works the same
+way: the dashboard shows the Playit addresses again and the records stay. A server whose
+new record fails keeps its old address and is tried again at the next start.
+
 ## Horizon
 
 [Horizon](https://github.com/horizon-rust/horizon) is Minecraft: Java Edition

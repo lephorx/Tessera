@@ -81,6 +81,11 @@ def _validate_server_dirs() -> None:
 
 _validate_server_dirs()
 backup_manager.init_scheduler()
+# Cloudflare zone or domain changed in .env since the records were made: move them
+try:
+    server_manager.resync_dns_if_changed()
+except Exception:
+    log.exception("Could not check the Cloudflare DNS records")
 # keep looking for tunnel ports playit.gg hadn't published yet
 server_manager.retry_missing_ports()
 

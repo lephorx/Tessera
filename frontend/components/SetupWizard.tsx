@@ -395,22 +395,21 @@ export function SetupWizard({ firstRun, onDone }: Props) {
       }
     if (wasOn && !cfEnabled)
       return {
-        destructive: true,
+        destructive: false,
         warnings: [
-          `Tessera deletes the DNS records of ${serverCount} from ${savedDomain}. Those addresses stop working; players have to use the Playit addresses.${none}`,
+          `The dashboard shows the Playit addresses of ${serverCount} again. Their records on ${savedDomain} stay in Cloudflare, so those addresses keep working until you delete them there.${none}`,
         ],
       }
     if (!cfEnabled) return { destructive: false, warnings: [] }
     const w: string[] = []
-    let destructive = false
+    const destructive = false
     if (domainChanged) {
-      destructive = true
       w.push(
-        `Server addresses move from *.${savedDomain} to *.${newDomain}. Tessera creates the new records for ${serverCount} and deletes the old ones, so the old addresses stop working. Tell your players.${none}`
+        `Server addresses move from *.${savedDomain} to *.${newDomain}. Tessera creates the new records for ${serverCount} and shows the new addresses. The old records stay in Cloudflare, so the old addresses keep working until you delete them there.${none}`
       )
     } else if (cfZone.trim() !== (savedValues.CLOUDFLARE_ZONE_ID ?? "")) {
       w.push(
-        `Tessera creates the records of ${serverCount} in the new zone and deletes them from the old one.${none}`
+        `Tessera creates the records of ${serverCount} in the new zone. The ones in the old zone stay there.${none}`
       )
     }
     if (cfToken)

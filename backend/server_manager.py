@@ -20,6 +20,7 @@ Deprovisioning sequence:
 """
 
 import asyncio
+import json
 import os
 import re
 import secrets
@@ -27,6 +28,7 @@ import shutil
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -36,7 +38,7 @@ import docker_manager
 import player_lists
 import progress_store
 from docker_manager import BEDROCK_TYPES, SERVER_TYPES, server_data_dir
-from db import get_db
+from db import DB_PATH, get_db
 from playit_manager import create_tunnel, delete_tunnel, last_error, lookup_minecraft_srv_port, wait_for_srv_port
 from cloudflare_manager import cloudflare_enabled, create_dns_record, create_srv_record, delete_dns_record_by_id
 from logger import get_logger
@@ -682,6 +684,57 @@ def dns_sync_status() -> dict:
         return {**_dns_sync, "failed": list(_dns_sync["failed"])}
 
 
+# The Cloudflare zone and domain the records were last made for. Changed by hand in .env,
+# the next start notices and moves the records like a change in Settings does.
+_APPLIED_FILE = Path(DB_PATH).parent / "cloudflare-applied.json"
+_ZONE_KEYS = ("CLOUDFLARE_ZONE_ID", "CLOUDFLARE_BASE_DOMAIN")
+
+
+def _cloudflare_now() -> dict:
+    if not cloudflare_enabled():
+        return {k: "" for k in _ZONE_KEYS}
+    return {k: os.getenv(k, "").strip() for k in _ZONE_KEYS}
+
+
+def _read_applied() -> dict | None:
+    try:
+        data = json.loads(_APPLIED_FILE.read_text())
+        return {k: str(data.get(k, "")) for k in _ZONE_KEYS}
+    except (OSError, ValueError):
+        return None
+
+
+def _write_applied(target: dict) -> None:
+    try:
+        _APPLIED_FILE.write_text(json.dumps(target))
+    except OSError as exc:
+        log.warning("Could not remember the Cloudflare settings: %s", exc)
+
+
+def _on_current_domain(name: str, domain: str) -> bool:
+    return bool(domain) and (name or "").lower().endswith("." + domain.lower())
+
+
+def resync_dns_if_changed() -> bool:
+    """At start: move the records when the zone or domain changed since they were made
+    (e.g. edited in .env), or when servers still have records on another domain."""
+    now = _cloudflare_now()
+    applied = _read_applied()
+    with get_db() as conn:
+        names = [r["name"] for r in conn.execute("SELECT name FROM dns_records WHERE record_type = 'CNAME'")]
+    stray = bool(now["CLOUDFLARE_BASE_DOMAIN"]) and any(not _on_current_domain(n, now["CLOUDFLARE_BASE_DOMAIN"]) for n in names)
+    if applied == now and not stray:
+        return False
+    if applied is None and not stray:
+        _write_applied(now)  # first start with this check: nothing to move
+        return False
+    old = {**(applied or now), "CLOUDFLARE_API_TOKEN": os.getenv("CLOUDFLARE_API_TOKEN", "")}
+    log.info("Cloudflare settings changed since the records were made (%s -> %s): moving them",
+             (applied or {}).get("CLOUDFLARE_BASE_DOMAIN") or "?", now["CLOUDFLARE_BASE_DOMAIN"] or "off")
+    start_dns_resync(old)
+    return True
+
+
 def start_dns_resync(old: dict) -> None:
     with _dns_sync_lock:
         _dns_sync.update(running=True, total=0, done=0, failed=[])
@@ -689,11 +742,12 @@ def start_dns_resync(old: dict) -> None:
 
 
 def resync_dns(old: dict) -> None:
-    """Create every server's records for the current Cloudflare settings and
-    delete the ones made with the previous settings (``old`` holds their
-    CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID). With Cloudflare turned off
-    the old records are only deleted. Runs in the background; see
-    dns_sync_status()."""
+    """Create every server's records for the current Cloudflare settings, and show
+    those addresses in the dashboard (``old`` holds the previous CLOUDFLARE_ZONE_ID and
+    CLOUDFLARE_BASE_DOMAIN). The old records stay in Cloudflare, so the old addresses
+    keep working until you remove them; Tessera just stops listing them. With
+    Cloudflare turned off the servers show their PlayIT address again. Runs in the
+    background; see dns_sync_status()."""
     with get_db() as conn:
         servers = conn.execute(
             "SELECT s.id, s.name, s.slug, s.type, t.tunnel_address, t.external_port"
@@ -718,6 +772,8 @@ def resync_dns(old: dict) -> None:
             if not ok:
                 _dns_sync["failed"].append(server["name"])
 
+    # failed servers keep their old records; the next start tries them again
+    _write_applied(_cloudflare_now())
     with _dns_sync_lock:
         _dns_sync["running"] = False
     log.info("DNS records moved; %d failed", len(_dns_sync["failed"]))
@@ -744,24 +800,21 @@ def _resync_server_dns(server, old: dict, enabled: bool) -> bool:
                              (external_port, server_id))
 
     if enabled:
-        unchanged = (old.get("CLOUDFLARE_ZONE_ID") == os.getenv("CLOUDFLARE_ZONE_ID")
-                     and old.get("CLOUDFLARE_BASE_DOMAIN") == os.getenv("CLOUDFLARE_BASE_DOMAIN"))
-        if unchanged and old_rows:
+        domain = os.getenv("CLOUDFLARE_BASE_DOMAIN", "").strip()
+        same_zone = old.get("CLOUDFLARE_ZONE_ID") == os.getenv("CLOUDFLARE_ZONE_ID")
+        if old_rows and same_zone and all(_on_current_domain(r["name"], domain) for r in old_rows):
             return True  # the records are already where they belong
         _, warning = _create_dns_records(server_id, subdomain, server["tunnel_address"], external_port, is_bedrock)
         if warning:
             # the old records stay, so the old address goes on working
             _set_connection_error(server_id, "dns_error", warning)
             return False
+    # the dashboard lists the new records; the old ones stay in Cloudflare
     with get_db() as conn:
         conn.executemany("DELETE FROM dns_records WHERE id = ?", [(r["id"],) for r in old_rows])
     _set_connection_error(server_id, "dns_error", None)
-
     for row in old_rows:
-        if row["cloudflare_record_id"] and not delete_dns_record_by_id(
-            row["cloudflare_record_id"], old.get("CLOUDFLARE_API_TOKEN"), old.get("CLOUDFLARE_ZONE_ID"),
-        ):
-            log.warning("Old DNS record %s needs manual removal", row["name"])
+        log.info("Kept the old DNS record %s in Cloudflare", row["name"])
     return True
 
 
