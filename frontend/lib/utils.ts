@@ -75,6 +75,14 @@ export function normalizeServer(raw: Server): Server {
 export const DELETING_KEY = "cscm-deleting"
 
 export function serverConnectAddress(server: Server): string | null {
+  // Horizon's game doesn't look up SRV records, so the custom domain would send its
+  // players to port 25565, where Playit has nothing: they get the Playit address and port.
+  const tunnel = server.tunnels?.[0]
+  if (server.type === "horizon" && tunnel?.address) {
+    return tunnel.external_port && !tunnel.address.includes(":")
+      ? `${tunnel.address}:${tunnel.external_port}`
+      : tunnel.address
+  }
   const cname = server.dns_records?.find((record) => record.type === "CNAME")
   const srvReady =
     server.type === "bedrock" ||
