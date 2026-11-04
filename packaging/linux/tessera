@@ -174,6 +174,19 @@ up() {
   [ "$status" = 0 ]
 }
 
+# GitHub's prebuilt images for this version (docker-compose.yml names them): an update
+# downloads only the changed layers. Without them (offline, a version still being built)
+# Compose builds them here.
+up_prebuilt() {
+  if compose pull --quiet api web; then
+    compose up -d --no-build --remove-orphans
+    docker image prune -a -f --filter "label=org.opencontainers.image.source=https://github.com/lephorx/Tessera" >/dev/null 2>&1 || true
+  else
+    say "No prebuilt images for this version: building them here (a few minutes)…"
+    up --build
+  fi
+}
+
 cmd_setup() {
   need_root setup
   command -v docker >/dev/null 2>&1 || fail "Docker is missing. Install your distribution's Docker package, then run: sudo tessera setup"
@@ -193,11 +206,11 @@ cmd_setup() {
   fi
   [ -f "$APP_DIR/.env" ] || write_env
   if [ $fresh = yes ]; then
-    say "Building and starting Tessera. The first time takes a few minutes…"
+    say "Downloading and starting Tessera…"
   else
     say "Starting Tessera…"
   fi
-  up || fail "Tessera didn't start. See: sudo tessera logs"
+  up_prebuilt || fail "Tessera didn't start. See: sudo tessera logs"
   show_ready
 }
 
@@ -207,7 +220,7 @@ cmd_update() {
   start_docker
   say "Downloading the newest Tessera…"
   git -C "$APP_DIR" pull --ff-only || fail "git pull failed. Local changes in $APP_DIR can block it."
-  up --build || fail "Tessera didn't start. See: sudo tessera logs"
+  up_prebuilt || fail "Tessera didn't start. See: sudo tessera logs"
   say "Tessera is up to date: $(cat "$APP_DIR/backend/VERSION")"
 }
 

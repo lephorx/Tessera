@@ -7,7 +7,8 @@ Publishing an update therefore means bumping that file on main.
 The API can't update itself (it gets replaced halfway), so ``start_update``
 launches a short-lived helper container through the Docker socket. The helper
 mounts the installation directory at the same path as on the host, runs
-``git pull --ff-only`` and ``docker compose up --build -d`` for this Compose
+``git pull --ff-only``, pulls the images GitHub built for the new version (or
+builds them when there are none) and ``docker compose up -d`` for this Compose
 project, and writes its progress into the API's data directory, where the new
 API reads it back. ``.env``, the database and world data are never touched.
 """
@@ -34,6 +35,11 @@ LATEST_URL = os.getenv(
     "CSCM_UPDATE_URL", f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/backend/VERSION"
 )
 CHECK_INTERVAL = 60 * 60  # seconds between GitHub checks
+# GitHub builds each version's images (.github/workflows/images.yml) a few minutes after
+# VERSION changes; a new version is announced once they're there, so updating only
+# downloads them. Empty: announce right away.
+IMAGES = os.getenv("CSCM_IMAGES", "ghcr.io/lephorx/tessera")
+IMAGES_RETRY = 5 * 60  # seconds until a version whose images are being built is checked again
 
 
 def update_check_enabled() -> bool:
@@ -74,9 +80,16 @@ log "Downloading the new version from GitHub…"
 git pull --ff-only >> "$S/update.log" 2>&1 \
   || fail "git pull failed. Local changes in $CSCM_DIR can block the update; see the help page."
 chown -R "$owner" . 2>/dev/null || true
-log "Rebuilding and restarting CSCM. This takes a few minutes…"
-docker compose --progress plain -p "$CSCM_PROJECT" up --build -d >> "$S/update.log" 2>&1 \
-  || fail "docker compose could not rebuild CSCM"
+if docker compose -p "$CSCM_PROJECT" pull --quiet api web >> "$S/update.log" 2>&1; then
+  log "Restarting Tessera with the new version…"
+  docker compose -p "$CSCM_PROJECT" up -d --no-build --remove-orphans >> "$S/update.log" 2>&1 \
+    || fail "docker compose could not restart Tessera"
+  docker image prune -a -f --filter "label=org.opencontainers.image.source=https://github.com/lephorx/Tessera" >/dev/null 2>&1 || true
+else
+  log "No prebuilt images for this version: rebuilding Tessera here. This takes a few minutes…"
+  docker compose --progress plain -p "$CSCM_PROJECT" up --build -d >> "$S/update.log" 2>&1 \
+    || fail "docker compose could not rebuild CSCM"
+fi
 log "Update finished."
 echo done > "$S/update.state"
 """
@@ -112,15 +125,48 @@ def latest_version(force: bool = False) -> tuple[str | None, str | None]:
             return _cache["latest"], None
         if not force and time.time() - _cache["checked_at"] < CHECK_INTERVAL:
             return _cache["latest"], _cache["error"]
+        checked_at = time.time()
         try:
             res = requests.get(LATEST_URL, timeout=10)
             res.raise_for_status()
-            _cache.update(latest=res.text.strip(), error=None)
+            latest = res.text.strip()
+            if is_newer(latest, current_version()) and not images_ready(latest):
+                log.info("Tessera %s is out; its images are still being built", latest)
+                checked_at -= CHECK_INTERVAL - IMAGES_RETRY
+            else:
+                _cache["latest"] = latest
+            _cache["error"] = None
         except requests.RequestException as exc:
             log.warning("Update check failed: %s", exc)
             _cache["error"] = "Could not reach GitHub to check for updates"
-        _cache["checked_at"] = time.time()
+        _cache["checked_at"] = checked_at
         return _cache["latest"], _cache["error"]
+
+
+def images_ready(version: str) -> bool:
+    """False only when GitHub's registry says a version's images aren't there (yet).
+    Trouble asking counts as ready: the update then builds them itself if it must."""
+    m = re.match(r"^([^/]+)/(.+)$", IMAGES)
+    if not m:
+        return True
+    registry, path = m.groups()
+    accept = ", ".join([
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    ])
+    for name in ("api", "web"):
+        repo = f"{path}-{name}"
+        try:
+            token = requests.get(f"https://{registry}/token", params={"scope": f"repository:{repo}:pull"}, timeout=10).json().get("token")
+            res = requests.head(f"https://{registry}/v2/{repo}/manifests/{version}",
+                                headers={"Accept": accept, **({"Authorization": f"Bearer {token}"} if token else {})}, timeout=10)
+        except (requests.RequestException, ValueError):
+            return True
+        if res.status_code == 404:
+            return False
+    return True
 
 
 def _own_container():

@@ -251,20 +251,30 @@ a Horizon engine compiled with them.
 
 The dashboard checks `backend/VERSION` on the `main` branch about once an hour.
 When a newer version is out, a banner offers a one-click update: a short-lived
-helper container runs `git pull --ff-only` and `docker compose up --build -d`.
-`.env`, servers, backups and the database stay untouched.
+helper container runs `git pull --ff-only`, downloads the new version's images
+and restarts Tessera with them. `.env`, servers, backups and the database stay
+untouched.
+
+GitHub builds the images for each version (`ghcr.io/lephorx/tessera-api` and
+`tessera-web`, for 64-bit Intel/AMD and ARM; `.github/workflows/images.yml`), so
+an update only downloads the layers that changed instead of building everything
+on your machine. The banner waits until a new version's images are published (a
+few minutes after the release). Without them (offline, a fork) Tessera builds
+the images itself, as before.
 
 To update by hand:
 
 ```sh
-cd ~/cscm && git pull --ff-only && docker compose up --build -d
+cd ~/cscm && git pull --ff-only && sh scripts/up.sh
 ```
 
 To turn the automatic check off, use the switch under **Settings > About &
 privacy**, or set `CSCM_UPDATE_CHECK=0` in `.env` and run
 `docker compose restart api`. "Check for updates" in the top bar still works.
 
-Maintainers publish an update by bumping `backend/VERSION` on `main`.
+Maintainers publish an update by bumping `backend/VERSION` on `main`, together
+with the two image tags in `docker-compose.yml` (the Images workflow fails when
+they differ).
 
 ## Minecraft EULA
 

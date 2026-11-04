@@ -1,5 +1,8 @@
 services:
   api:
+    # built by GitHub for each version (.github/workflows/images.yml; scripts/up.sh pulls it);
+    # Compose builds it here when it's missing. Bumped with backend/VERSION.
+    image: ghcr.io/lephorx/tessera-api:1.19.1
     build: ./backend
     restart: unless-stopped
     env_file: .env
@@ -26,6 +29,7 @@ services:
       retries: 3
 
   web:
+    image: ghcr.io/lephorx/tessera-web:1.19.1
     build: ./frontend
     restart: unless-stopped
     depends_on:

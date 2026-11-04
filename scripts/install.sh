@@ -184,7 +184,8 @@ chmod 600 "$INSTALL_DIR/.env"
 
 say "Starting Tessera…"
 cd "$INSTALL_DIR"
-docker compose up --build -d
+# GitHub's prebuilt images when there are some, else built here
+sh scripts/up.sh
 
 # Creating the first account needs the one-time setup code the API prints to
 # its log, so nobody else on the network can claim the admin account first.
