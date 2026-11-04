@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react"
-import { Box, Feather, Gem, Hammer, Scroll, Zap } from "lucide-react"
+import { Box, Feather, Gem, Hammer, Rocket, Scroll, Zap } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -53,6 +53,7 @@ const TYPES: Record<
   forge: { label: "Forge", icon: Hammer, color: "#959eef" },
   vanilla: { label: "Vanilla", icon: Box, color: "#7dd87d" },
   bedrock: { label: "Bedrock", icon: Gem, color: "#6fd2c3" },
+  horizon: { label: "Horizon", icon: Rocket, color: "#f0795a" },
 }
 
 export function serverTypeInfo(type: string) {

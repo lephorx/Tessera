@@ -62,6 +62,10 @@ const BLOCKED_PORTS = new Set([
 const JAVA_TYPES = ["paper", "forge", "fabric", "vanilla", "purpur"]
 const DEFAULT_JAVA_VERSION = "1.21.4"
 const DEFAULT_BEDROCK_VERSION = "LATEST"
+// Horizon (github.com/horizon-rust/horizon) is Minecraft 26.3 rewritten in Rust
+const HORIZON_VERSION = "26.3"
+// No JVM: one memory limit for the container instead of a heap range
+const noJvm = (type: string) => type === "bedrock" || type === "horizon"
 const EULA_URL = "https://aka.ms/MinecraftEULA"
 const MS_PRIVACY_URL = "https://go.microsoft.com/fwlink/?LinkId=521839"
 
@@ -160,6 +164,7 @@ export function ServerCreateModal({
   const [serverTypes, setServerTypes] = useState<string[]>([
     ...JAVA_TYPES,
     "bedrock",
+    "horizon",
   ])
   const [submitting, setSubmitting] = useState(false)
   const [usedPorts, setUsedPorts] = useState<Set<number>>(new Set())
@@ -215,7 +220,12 @@ export function ServerCreateModal({
       const isBedrock = newType === "bedrock"
       const wasBedrock = prev.type === "bedrock"
       const next = { ...prev, type: newType }
-      if (isBedrock && !wasBedrock) {
+      if (newType === "horizon") {
+        next.version = HORIZON_VERSION
+        next.loader_version = ""
+      } else if (prev.type === "horizon") {
+        next.version = isBedrock ? DEFAULT_BEDROCK_VERSION : DEFAULT_JAVA_VERSION
+      } else if (isBedrock && !wasBedrock) {
         if (prev.version === DEFAULT_JAVA_VERSION)
           next.version = DEFAULT_BEDROCK_VERSION
         next.loader_version = ""
@@ -348,7 +358,7 @@ export function ServerCreateModal({
       next.port = "This port is reserved by the system"
     if (portStatus === "taken") next.port = "This port is already in use"
 
-    const isBedrock = form.type === "bedrock"
+    const isBedrock = noJvm(form.type)
     const memMin = parseInt(form.mem_min, 10)
     const memMax = parseInt(form.mem_max, 10)
     // Bedrock has no JVM, so there's no min heap — mem_max is just a
@@ -389,7 +399,7 @@ export function ServerCreateModal({
         // The Min RAM field is hidden for Bedrock (no JVM heap), but the
         // backend still enforces mem_max >= mem_min unconditionally — send
         // 1 so a leftover/hidden mem_min never fails that check.
-        mem_min: form.type === "bedrock" ? 1 : parseInt(form.mem_min, 10),
+        mem_min: noJvm(form.type) ? 1 : parseInt(form.mem_min, 10),
         mem_max: parseInt(form.mem_max, 10),
         ...(form.loader_version.trim()
           ? { loader_version: form.loader_version.trim() }
@@ -540,15 +550,24 @@ export function ServerCreateModal({
               <SelectContent>
                 {serverTypes.map((t) => (
                   <SelectItem key={t} value={t} className="capitalize">
-                    {t}
+                    {t === "horizon" ? "Horizon (Rust)" : t}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Version — Bedrock always runs the latest release, no picker needed */}
-          {form.type !== "bedrock" && (
+          {form.type === "horizon" && (
+            <p className="text-xs text-muted-foreground">
+              Horizon is Minecraft {HORIZON_VERSION} rewritten in Rust: fast and light on
+              memory. Players join with Minecraft {HORIZON_VERSION}. The server runs
+              Horizon&apos;s newest Nightly; the first start downloads Minecraft&apos;s files
+              and prepares Horizon&apos;s from them, which takes a few minutes.
+            </p>
+          )}
+
+          {/* Version — Bedrock always runs the latest release, Horizon is one version */}
+          {form.type !== "bedrock" && form.type !== "horizon" && (
             <div className="space-y-1.5">
               <Label htmlFor="srv-version">Version</Label>
               <VersionPicker
@@ -734,12 +753,12 @@ export function ServerCreateModal({
           {/* RAM — Bedrock has no JVM, so there's no min heap, just a memory cap */}
           <div
             className={
-              form.type === "bedrock"
+              noJvm(form.type)
                 ? "grid grid-cols-1 gap-3"
                 : "grid grid-cols-2 gap-3"
             }
           >
-            {form.type !== "bedrock" && (
+            {!noJvm(form.type) && (
               <div className="space-y-1.5">
                 <Label htmlFor="srv-memmin">Min RAM (GB)</Label>
                 <Input
@@ -758,7 +777,7 @@ export function ServerCreateModal({
             )}
             <div className="space-y-1.5">
               <Label htmlFor="srv-memmax">
-                {form.type === "bedrock" ? "Memory Limit (GB)" : "Max RAM (GB)"}
+                {noJvm(form.type) ? "Memory Limit (GB)" : "Max RAM (GB)"}
               </Label>
               <Input
                 id="srv-memmax"

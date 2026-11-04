@@ -1,5 +1,6 @@
 """Server CRUD, lifecycle, console command, stats, logs, and networking routes."""
 
+import re
 import sqlite3
 import threading
 
@@ -183,8 +184,10 @@ def get_server_detail(server_id: int):
 #                               (https://aka.ms/MinecraftEULA; for Bedrock also the
 #                               Microsoft Privacy Policy). Otherwise 400.
 #   name      string  required  Server display name.
-#   type      string  optional  paper|forge|fabric|vanilla|purpur|bedrock
-#                               Default: paper
+#   type      string  optional  paper|forge|fabric|vanilla|purpur|bedrock|horizon
+#                               Default: paper. horizon: Horizon, Minecraft 26.3 in Rust
+#                               (version is always 26.3; loader_version "latest" or a
+#                               Horizon build; mem_max caps the container, no JVM)
 #   version   string  optional  Minecraft version (e.g. "1.21.4"), or "LATEST".
 #                               Default: 1.21.4 (Java) / LATEST (Bedrock)
 #   port      int     optional  Host server port (1024-65535).
@@ -234,6 +237,14 @@ def create_server():
     is_bedrock = server_type == "bedrock"
 
     version = body.get("version") or ("LATEST" if is_bedrock else "1.21.4")
+    if server_type == "horizon":
+        # Horizon is one Minecraft version; loader_version is its build ("latest" follows
+        # Horizon's newest Nightly, or nightly-<date>-<commit> keeps one)
+        version = docker_manager.HORIZON_MINECRAFT
+        build = body.get("loader_version") or "latest"
+        if not isinstance(build, str) or not re.fullmatch(r"latest|nightly-\d{4}-\d{2}-\d{2}-[0-9a-f]{7,40}", build):
+            return jsonify({"error": "'loader_version' must be 'latest' or a Horizon build like nightly-2026-11-04-67dad0d"}), 400
+        body["loader_version"] = build
     # No port given: take the next free one
     port    = body.get("port")   or free_port(is_bedrock)
     mem_min = body.get("mem_min", 2)
@@ -842,6 +853,14 @@ def update_server_version(server_id: int):
         row = conn.execute("SELECT * FROM servers WHERE id = ?", (server_id,)).fetchone()
     if not row:
         return jsonify({"success": False, "message": "Server not found"}), 404
+
+    if row["type"] == "horizon":
+        # one Minecraft version; only the Horizon build can change
+        new_version = None
+        if has_loader and new_loader is not None and not re.fullmatch(r"latest|nightly-\d{4}-\d{2}-\d{2}-[0-9a-f]{7,40}", str(new_loader)):
+            return jsonify({"success": False, "message": "'loader_version' must be 'latest' or a Horizon build like nightly-2026-11-04-67dad0d"}), 400
+        if not has_loader:
+            return jsonify({"success": False, "message": "Horizon is always Minecraft 26.3; only its build (loader_version) can change"}), 400
 
     updates = {}
     if new_version:

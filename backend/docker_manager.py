@@ -71,8 +71,17 @@ MODPACK_FILE = ".tessera/pack.mrpack"
 # Public API type(s) served by the separate itzg/minecraft-bedrock-server image.
 BEDROCK_TYPES = {"bedrock"}
 
+# Horizon (github.com/horizon-rust/horizon): Minecraft: Java Edition 26.3 in Rust.
+HORIZON_TYPES = {"horizon"}
+HORIZON_MINECRAFT = "26.3"
+# The script the container runs, copied into the server's folder at every create.
+HORIZON_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "horizon", "horizon_server.py")
+# Horizon's builds and prepared game files, shared by all Horizon servers (below the
+# servers folder, which no server id can be).
+HORIZON_SHARED = "_horizon"
+
 # All valid public server types, for input validation and /api/server-types.
-SERVER_TYPES = {**JAVA_TYPES, "bedrock": "BEDROCK"}
+SERVER_TYPES = {**JAVA_TYPES, "bedrock": "BEDROCK", "horizon": "HORIZON"}
 
 _client: docker.DockerClient | None = None
 
@@ -144,6 +153,8 @@ def create_server_container(row) -> str:
 
     if row["type"] in BEDROCK_TYPES:
         return _create_bedrock_container(row)
+    if row["type"] in HORIZON_TYPES:
+        return _create_horizon_container(row)
     return _create_java_container(row)
 
 
@@ -212,6 +223,43 @@ def _create_bedrock_container(row) -> str:
         labels={MANAGED_LABEL: "true", SERVER_ID_LABEL: str(server_id), TYPE_LABEL: "bedrock"},
     )
     log.info("Bedrock container created: server_id=%d, container_id=%s", server_id, container.id)
+    return container.id
+
+
+def _create_horizon_container(row) -> str:
+    """Horizon has no JVM to size: its memory is the container's limit. Horizon's
+    server build only exists for linux-x86_64, so other hosts emulate it."""
+    import shutil
+
+    server_id = row["id"]
+    client = _get_client()
+    tessera_dir = os.path.join(server_data_dir(server_id), ".tessera")
+    os.makedirs(tessera_dir, exist_ok=True)
+    shutil.copyfile(HORIZON_SCRIPT, os.path.join(tessera_dir, "horizon.py"))
+    os.makedirs(os.path.join(SERVERS_DIR, HORIZON_SHARED), exist_ok=True)
+    env = {
+        "EULA": "TRUE",
+        "RCON_PASSWORD": row["rcon_password"],
+        "HORIZON_BUILD": dict(row).get("loader_version") or "latest",
+    }
+    container = client.containers.run(
+        MC_IMAGE,
+        name=container_name(server_id),
+        detach=True,
+        platform="linux/amd64",
+        entrypoint=["python3", "-u", "/data/.tessera/horizon.py"],
+        environment=env,
+        ports={"25565/tcp": row["serverport"]},
+        volumes={
+            _host_bind_path(server_id): {"bind": "/data", "mode": "rw"},
+            f"{SERVERS_DIR_HOST}/{HORIZON_SHARED}": {"bind": "/horizon", "mode": "rw"},
+        },
+        restart_policy={"Name": "unless-stopped"},
+        mem_limit=f"{row['mem_max_gb']}g",
+        dns=MC_CONTAINER_DNS or None,
+        labels={MANAGED_LABEL: "true", SERVER_ID_LABEL: str(server_id), TYPE_LABEL: "java"},
+    )
+    log.info("Horizon container created: server_id=%d, container_id=%s", server_id, container.id)
     return container.id
 
 

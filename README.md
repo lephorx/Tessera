@@ -8,8 +8,9 @@ on your own machine. It runs in Docker, starts every Minecraft server in its own
 container, and works together with [Tessera Launcher](https://tesseralauncher.com):
 a modpack from the launcher becomes a server in a few clicks.
 
-- **Servers:** Java (Vanilla, Paper, Purpur, Fabric, Forge) and Bedrock.
-  Start, stop, live console, files, `server.properties`, MOTD and icon.
+- **Servers:** Java (Vanilla, Paper, Purpur, Fabric, Forge), Bedrock and
+  [Horizon](#horizon). Start, stop, live console, files, `server.properties`,
+  MOTD and icon.
 - **Players:** whitelist, operators and bans.
 - **Backups:** zip or copy backups (ZFS snapshots where available), restore
   with one click.
@@ -203,6 +204,26 @@ The SQLite database is stored at `${DATA_DIR_HOST:-./data}/cscm.db`. Tessera
 needs the host's Docker socket to manage the Minecraft containers. After
 editing `.env`, run `docker compose restart api`. `GET /health` on the
 dashboard checks the API.
+
+## Horizon
+
+[Horizon](https://github.com/horizon-rust/horizon) is Minecraft: Java Edition
+26.3 rewritten in Rust (MIT, unofficial): fast and light on memory. Players join
+with Minecraft 26.3 or Horizon. Pick **Horizon (Rust)** as the server type.
+
+The server runs in the same `itzg/minecraft-server:java25` image as the Java
+servers, with [`backend/horizon/horizon_server.py`](backend/horizon/horizon_server.py)
+as its entrypoint. On every start it installs Horizon's newest Nightly server
+build (checked against Horizon's Ed25519-signed `SHA256SUMS`), and once per build
+downloads Minecraft 26.3's files from Mojang and prepares Horizon's game files
+from them (a few minutes the first time). Builds and prepared files live in
+`<servers folder>/_horizon`, shared by all Horizon servers. Settings, the console
+(RCON), players, backups and restarts work as for Java servers; the memory field
+is the container's limit (Horizon has no JVM).
+
+Horizon only builds its server for 64-bit Intel/AMD Linux; on other machines
+(Apple silicon, ARM boards) Docker has to emulate it, which is much slower.
+Horizon's mods aren't installed on servers yet.
 
 ## Updates
 

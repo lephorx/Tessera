@@ -504,7 +504,8 @@ export default function ServerDetailPage() {
         await api.control.changePort(serverId, port)
         toast.success("Port updated")
       } else if (editField === "ram") {
-        const isBedrock = server.type === "bedrock"
+        // no JVM (Bedrock, Horizon): one memory limit
+        const isBedrock = server.type === "bedrock" || server.type === "horizon"
         const min = parseInt(editValues.mem_min, 10)
         const max = parseInt(editValues.mem_max, 10)
         if (
@@ -1123,6 +1124,8 @@ export default function ServerDetailPage() {
                   value:
                     server.type === "bedrock"
                       ? "Always latest"
+                      : server.type === "horizon"
+                      ? `Horizon ${server.loader_version && server.loader_version !== "latest" ? server.loader_version : "newest Nightly"} (Minecraft ${server.version})`
                       : server.version +
                         (server.loader_version
                           ? ` / ${server.loader_version}`
@@ -1151,8 +1154,8 @@ export default function ServerDetailPage() {
                     <p className="text-xs text-muted-foreground">{label}</p>
                     <p className="text-sm font-medium">{value}</p>
                   </div>
-                  {/* Bedrock always runs the latest release — nothing to edit */}
-                  {!(field === "version" && server.type === "bedrock") && (
+                  {/* Bedrock always runs the latest release, Horizon its newest Nightly — nothing to edit */}
+                  {!(field === "version" && (server.type === "bedrock" || server.type === "horizon")) && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -1546,12 +1549,12 @@ export default function ServerDetailPage() {
             {editField === "ram" && (
               <div
                 className={
-                  server.type === "bedrock"
+                  server.type === "bedrock" || server.type === "horizon"
                     ? "grid grid-cols-1 gap-3"
                     : "grid grid-cols-2 gap-3"
                 }
               >
-                {server.type !== "bedrock" && (
+                {server.type !== "bedrock" && server.type !== "horizon" && (
                   <div className="space-y-1.5">
                     <Label htmlFor="edit-memmin">Min (GB)</Label>
                     <Input
@@ -1572,7 +1575,7 @@ export default function ServerDetailPage() {
                 )}
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-memmax">
-                    {server.type === "bedrock"
+                    {server.type === "bedrock" || server.type === "horizon"
                       ? "Memory Limit (GB)"
                       : "Max (GB)"}
                   </Label>
