@@ -440,6 +440,76 @@ def update_server_pack(server_id: int):
 
 
 # ---------------------------------------------------------------------------
+# PUT /api/servers/<id>/horizon-mods — multipart: "mods" (a zip of .hmod files)
+# Tessera Launcher sends a Horizon instance's content mods that run on servers
+# (side "both" or "server"). They're installed into horizon-mods/ and turned on
+# when the server next starts (horizon_server.py); an empty zip removes them.
+# ---------------------------------------------------------------------------
+HORIZON_MOD_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\.hmod$")
+
+
+def _check_horizon_mods(data: bytes) -> int:
+    """How many mods the zip holds, or ValueError if it isn't only .hmod files."""
+    import io
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            infos = zf.infolist()
+            for info in infos:
+                if info.is_dir() or not HORIZON_MOD_FILE.match(info.filename):
+                    raise ValueError(f"{info.filename!r} isn't a Horizon content mod (.hmod)")
+                if info.file_size > 64 * 1024 * 1024:
+                    raise ValueError(f"{info.filename} is bigger than 64 MB")
+                with zipfile.ZipFile(io.BytesIO(zf.read(info))) as mod:
+                    if "horizon-mod.toml" not in mod.namelist():
+                        raise ValueError(f"{info.filename} has no horizon-mod.toml")
+    except zipfile.BadZipFile as exc:
+        raise ValueError("That isn't a zip of Horizon mods") from exc
+    return len(infos)
+
+
+@servers_bp.route("/servers/<int:server_id>/horizon-mods", methods=["PUT"])
+def update_horizon_mods(server_id: int):
+    auth_err = authorize()
+    if auth_err:
+        return auth_err
+    with get_db() as conn:
+        row = conn.execute("SELECT type FROM servers WHERE id = ?", (server_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "message": "Server not found"}), 404
+    if row["type"] != "horizon":
+        return jsonify({"error": "Only Horizon servers take Horizon mods"}), 400
+
+    upload = request.files.get("mods")
+    if upload is None:
+        return jsonify({"error": "Upload the mods as 'mods'"}), 400
+    data = upload.read(MAX_PACK_BYTES + 1)
+    if len(data) > MAX_PACK_BYTES:
+        return jsonify({"error": "The mods are bigger than 200 MB"}), 413
+    try:
+        count = _check_horizon_mods(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        safe_paths.replace_bytes(server_data_dir(server_id), ".tessera/horizon-mods.zip", data)
+    except safe_paths.UnsafePath:
+        return jsonify({"error": "The server folder has a symlink where the mods go"}), 409
+    # servers made by Tessera 1.18 run a start script that doesn't install mods yet
+    docker_manager.refresh_horizon_script(server_id)
+
+    running = docker_manager.runtime_status(server_id) in ("starting", "running", "healthy", "unhealthy")
+    log.info("Horizon mods updated: db_id=%d, mods=%d, running=%s", server_id, count, running)
+    return jsonify({
+        "success": True,
+        "restarted": False,
+        "needs_restart": running,
+        "message": "Mods updated. Restart the server to install them." if running else "Mods updated. They're installed when the server starts.",
+    }), 200
+
+
+# ---------------------------------------------------------------------------
 # DELETE /api/servers/<id>
 # ---------------------------------------------------------------------------
 @servers_bp.route("/servers/<int:server_id>", methods=["DELETE"])

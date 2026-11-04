@@ -234,7 +234,18 @@ is the container's limit (Horizon has no JVM).
 
 Horizon only builds its server for 64-bit Intel/AMD Linux; on other machines
 (Apple silicon, ARM boards) Docker has to emulate it, which is much slower.
-Horizon's mods aren't installed on servers yet.
+### Horizon mods
+
+Horizon's content mods (`.hmod`) come from Tessera Launcher: a Horizon instance's
+turned-on mods that run on servers (`side = "both"` or `"server"` in their
+manifest) are sent with `PUT /api/servers/<id>/horizon-mods` (a zip of the
+`.hmod` files) when you change them, or with **Sync mods** on the instance's
+server. At the next start the server puts them in `horizon-mods/` and turns them
+on in `horizon-mods.txt`, where Horizon reads them; mods it sent before and no
+longer does are removed, mods you put there yourself stay. Players join with the
+same mods, which Horizon checks. Client-only mods (a HUD, a minimap) stay on the
+player's computer. Native mods (`.hnmod`) aren't installed on servers: they need
+a Horizon engine compiled with them.
 
 ## Updates
 

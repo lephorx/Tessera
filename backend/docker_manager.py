@@ -16,6 +16,7 @@ on these labels so the app never touches a container it didn't create.
 import os
 import re
 import shlex
+import shutil
 from contextlib import contextmanager
 
 import docker
@@ -74,7 +75,8 @@ BEDROCK_TYPES = {"bedrock"}
 # Horizon (github.com/horizon-rust/horizon): Minecraft: Java Edition 26.3 in Rust.
 HORIZON_TYPES = {"horizon"}
 HORIZON_MINECRAFT = "26.3"
-# The script the container runs, copied into the server's folder at every create.
+# The script the container runs, copied into the server's folder at every create, start
+# and restart (refresh_horizon_script), so servers made by an older Tessera run the new one.
 HORIZON_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "horizon", "horizon_server.py")
 # Horizon's builds and prepared game files, shared by all Horizon servers (below the
 # servers folder, which no server id can be).
@@ -229,7 +231,6 @@ def _create_bedrock_container(row) -> str:
 def _create_horizon_container(row) -> str:
     """Horizon has no JVM to size: its memory is the container's limit. Horizon's
     server build only exists for linux-x86_64, so other hosts emulate it."""
-    import shutil
 
     server_id = row["id"]
     client = _get_client()
@@ -306,10 +307,23 @@ def _transition(server_id: int, state: str):
         _transitions.pop(server_id, None)
 
 
+def refresh_horizon_script(server_id: int) -> None:
+    """A Horizon server's start script, as this Tessera has it (no-op for other servers)."""
+    tessera_dir = os.path.join(server_data_dir(server_id), ".tessera")
+    target = os.path.join(tessera_dir, "horizon.py")
+    if os.path.isfile(target) and not os.path.islink(target):
+        try:
+            shutil.copyfile(HORIZON_SCRIPT, target + ".part")
+            os.replace(target + ".part", target)
+        except OSError:
+            log.warning("Couldn't refresh the Horizon script of server %d", server_id, exc_info=True)
+
+
 def start_server(server_id: int) -> tuple[bool, str]:
     container = get_container(server_id)
     if not container:
         return False, "Container not found"
+    refresh_horizon_script(server_id)
     container.start()
     return True, "Start command sent"
 
@@ -331,6 +345,7 @@ def restart_server(server_id: int) -> tuple[bool, str]:
     container = get_container(server_id)
     if not container:
         return False, "Container not found"
+    refresh_horizon_script(server_id)
     with _transition(server_id, "restarting"):
         container.restart(timeout=60)
     return True, "Restart command sent"

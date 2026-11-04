@@ -10,7 +10,9 @@ instead of the image's own entrypoint. On every start it:
    26.3's own files downloaded from Mojang (the version its research-lock.json pins);
 3. sets the server up (horizon-server init) the first time, then copies the settings
    Tessera keeps in server.properties into Horizon's server.toml;
-4. runs `horizon-server run` as the container's main process.
+4. installs the content mods Tessera Launcher sent (.tessera/horizon-mods.zip) into
+   horizon-mods/ and turns them on in horizon-mods.txt, where Horizon reads them;
+5. runs `horizon-server run` as the container's main process.
 
 Builds and prepared files are shared by all Horizon servers in /horizon.
 Only the standard library and the image's openssl are used.
@@ -21,6 +23,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,6 +31,7 @@ import tarfile
 import tempfile
 import time
 import urllib.request
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 
 REPO = "horizon-rust/horizon"
@@ -304,6 +308,81 @@ def configure(server: str, build_dir: str, resources: str) -> None:
                 say(f"Horizon doesn't take {kv.split('=')[0]}: {r.stderr.strip()}")
 
 
+# ── content mods ──
+
+MODS_ZIP = os.path.join(DATA, ".tessera", "horizon-mods.zip")
+# the files Tessera put in horizon-mods/ last time, so mods added by hand stay
+MODS_RECORD = os.path.join(DATA, ".tessera", "horizon-mods.json")
+MOD_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\.hmod$")
+MOD_ID = re.compile(r'^\s*id\s*=\s*"([a-z0-9_]{1,64})"\s*$', re.M)
+
+
+def mod_id(data: bytes) -> str | None:
+    """A .hmod's id, from the horizon-mod.toml inside it."""
+    import io
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            m = MOD_ID.search(z.read("horizon-mod.toml").decode("utf-8", "replace"))
+    except (zipfile.BadZipFile, KeyError):
+        return None
+    return m.group(1) if m else None
+
+
+def install_mods() -> None:
+    """Puts the mods Tessera Launcher sent into horizon-mods/ (Horizon reads them from the
+    server folder when it starts), removes the ones it sent before and no longer does, and
+    turns them on in horizon-mods.txt (mod.<id>:true), keeping the file's other lines."""
+    if not os.path.isfile(MODS_ZIP):
+        return
+    try:
+        before = json.load(open(MODS_RECORD))
+    except (OSError, ValueError):
+        before = {}
+    mods: dict[str, str] = {}  # file -> id
+    folder = os.path.join(DATA, "horizon-mods")
+    os.makedirs(folder, exist_ok=True)
+    with zipfile.ZipFile(MODS_ZIP) as z:
+        for info in z.infolist():
+            name = info.filename
+            if not MOD_FILE.match(name) or info.file_size > 64 << 20:
+                say(f"Left out {name!r} from the mods: not a .hmod file")
+                continue
+            data = z.read(info)
+            mid = mod_id(data)
+            if not mid:
+                say(f"Left out {name}: it has no horizon-mod.toml with an id")
+                continue
+            path = os.path.join(folder, name)
+            if os.path.islink(path):
+                os.unlink(path)
+            tmp = path + ".part"
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+            mods[name] = mid
+    for name in before:
+        if name not in mods and MOD_FILE.match(name):
+            path = os.path.join(folder, name)
+            if os.path.isfile(path) and not os.path.islink(path):
+                os.remove(path)
+    gone = set(before.values()) - set(mods.values())
+    switches = os.path.join(DATA, "horizon-mods.txt")
+    lines = []
+    if os.path.isfile(switches) and not os.path.islink(switches):
+        lines = open(switches, encoding="utf-8", errors="replace").read().splitlines()
+    on = set(mods.values())
+    lines = [l for l in lines if not any(l.startswith(f"mod.{i}:") for i in on | gone)]
+    lines += [f"mod.{i}:true" for i in sorted(on)]
+    with open(switches + ".part", "w", encoding="utf-8") as f:
+        f.write("".join(l + "\n" for l in lines))
+    os.replace(switches + ".part", switches)
+    with open(MODS_RECORD, "w") as f:
+        json.dump(mods, f)
+    os.remove(MODS_ZIP)
+    say(f"Installed {len(mods)} Horizon mod(s): {', '.join(sorted(on)) or 'none'}")
+
+
 def main() -> None:
     os.makedirs(os.path.join(SHARED, "builds"), exist_ok=True)
     # one server at a time installs and prepares; the others wait and reuse it
@@ -328,6 +407,10 @@ def main() -> None:
     server = os.path.join(build_dir, "horizon-server")
     configure(server, build_dir, resources)
     os.makedirs(os.path.join(DATA, ".tessera"), exist_ok=True)
+    try:
+        install_mods()
+    except Exception as exc:  # noqa: BLE001 - the server still starts, with the mods it had
+        say(f"The mods couldn't be installed: {exc}")
     open(os.path.join(DATA, ".tessera", "horizon-build"), "w").write(build)
     say(f"Starting Horizon {build} (Minecraft {MINECRAFT})")
     sys.stdout.flush()
