@@ -413,6 +413,9 @@ def main() -> None:
         say(f"The mods couldn't be installed: {exc}")
     open(os.path.join(DATA, ".tessera", "horizon-build"), "w").write(build)
     say(f"Starting Horizon {build} (Minecraft {MINECRAFT})")
+    # Horizon says why a join failed (a login, a protocol or a mod mismatch) only with this
+    # set; without it a player is cut off and the console shows nothing
+    os.environ.setdefault("HORIZON_NET_DEBUG", "1")
     sys.stdout.flush()
     os.chdir(DATA)
     os.execv(server, [server, "--dir", DATA, "run"])
