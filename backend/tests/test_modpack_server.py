@@ -37,6 +37,7 @@ class ModpackTests(unittest.TestCase):
                 return type("C", (), {"id": "x"})()
 
         docker_manager._client = type("Client", (), {"containers": FakeContainers()})()
+        docker_manager.MC_NETWORK_ISOLATION = False
         row = {"id": 1, "type": "modpack", "version": "1.21.1", "mem_min_gb": 2, "mem_max_gb": 4,
                "rcon_password": "r", "serverport": 25565, "loader_version": "fabric-loader 0.16.9"}
         docker_manager._create_java_container(row)
@@ -44,6 +45,7 @@ class ModpackTests(unittest.TestCase):
         self.assertEqual(captured["MODRINTH_MODPACK"], "/data/.tessera/pack.mrpack")
         self.assertNotIn("VERSION", captured)
         docker_manager._client = None
+        docker_manager.MC_NETWORK_ISOLATION = True
 
 
 class UpdatePackTests(unittest.TestCase):

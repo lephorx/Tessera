@@ -54,6 +54,18 @@ TYPE_LABEL = "cscm.type"
 
 BEDROCK_PORT = 19132
 
+# Each server gets a Docker network of its own, so a server's mods can't open
+# connections to another server's container (RCON included) the way they can
+# on the shared default bridge. Players are unaffected: they come in through
+# the published port. Tessera itself reaches the servers through `docker exec`,
+# never over the network. Set MC_NETWORK_ISOLATION=false to keep every server
+# on the default bridge as before.
+MC_NETWORK_ISOLATION = os.getenv("MC_NETWORK_ISOLATION", "true").strip().lower() not in ("0", "false", "no", "off")
+NETWORK_PREFIX = "cscm-mc-net-"
+# The host interface is named after the server (tmc<id>), so a host firewall
+# can tell server traffic apart from Tessera's own containers: `-i tmc+`.
+BRIDGE_PREFIX = "tmc"
+
 # Public API type -> itzg/minecraft-server TYPE env value (Java edition image).
 JAVA_TYPES = {
     "paper":   "PAPER",
@@ -107,6 +119,63 @@ def server_data_dir(server_id: int) -> str:
 def _host_bind_path(server_id: int) -> str:
     """Path as seen by the Docker daemon for bind-mounting into the MC container."""
     return f"{SERVERS_DIR_HOST}/{server_id}"
+
+
+def network_name(server_id: int) -> str:
+    return f"{NETWORK_PREFIX}{server_id}"
+
+
+def _server_network(server_id: int) -> str | None:
+    """Return the name of the server's own network, creating it if needed.
+
+    None when MC_NETWORK_ISOLATION is off: the container then goes on Docker's
+    default bridge.
+    """
+    if not MC_NETWORK_ISOLATION:
+        return None
+    client = _get_client()
+    name = network_name(server_id)
+    try:
+        network = client.networks.get(name)
+    except NotFound:
+        network = None
+    if network is not None:
+        if network.attrs.get("Labels", {}).get(MANAGED_LABEL) != "true":
+            raise RuntimeError(f"Network {name} exists but is not Tessera's; remove or rename it")
+        return name
+    try:
+        client.networks.create(
+            name,
+            driver="bridge",
+            options={"com.docker.network.bridge.name": f"{BRIDGE_PREFIX}{server_id}"},
+            labels={MANAGED_LABEL: "true", SERVER_ID_LABEL: str(server_id)},
+        )
+    except APIError as exc:
+        if "address pool" in str(exc).lower() or "non-overlapping" in str(exc).lower():
+            raise RuntimeError(
+                "Docker has no free address range for another server network. Give it a "
+                "bigger pool with \"default-address-pools\" in /etc/docker/daemon.json (see "
+                "the README), or set MC_NETWORK_ISOLATION=false."
+            ) from exc
+        raise
+    log.info("Network created: server_id=%d, network=%s", server_id, name)
+    return name
+
+
+def _remove_server_network(server_id: int) -> None:
+    """Remove the server's own network, if it has one. Safe to call when it doesn't."""
+    client = _get_client()
+    try:
+        network = client.networks.get(network_name(server_id))
+    except NotFound:
+        return
+    if network.attrs.get("Labels", {}).get(MANAGED_LABEL) != "true":
+        return
+    try:
+        network.remove()
+        log.info("Network removed: server_id=%d", server_id)
+    except APIError as exc:
+        log.warning("Could not remove network for server_id=%d: %s", server_id, exc)
 
 
 def get_container(server_id: int):
@@ -196,6 +265,7 @@ def _create_java_container(row) -> str:
         volumes={_host_bind_path(server_id): {"bind": "/data", "mode": "rw"}},
         restart_policy={"Name": "unless-stopped"},
         dns=MC_CONTAINER_DNS or None,
+        network=_server_network(server_id),
         labels={MANAGED_LABEL: "true", SERVER_ID_LABEL: str(server_id), TYPE_LABEL: "java"},
     )
     log.info("Container created: server_id=%d, container_id=%s", server_id, container.id)
@@ -222,6 +292,7 @@ def _create_bedrock_container(row) -> str:
         restart_policy={"Name": "unless-stopped"},
         mem_limit=f"{row['mem_max_gb']}g",
         dns=MC_CONTAINER_DNS or None,
+        network=_server_network(server_id),
         labels={MANAGED_LABEL: "true", SERVER_ID_LABEL: str(server_id), TYPE_LABEL: "bedrock"},
     )
     log.info("Bedrock container created: server_id=%d, container_id=%s", server_id, container.id)
@@ -258,6 +329,7 @@ def _create_horizon_container(row) -> str:
         restart_policy={"Name": "unless-stopped"},
         mem_limit=f"{row['mem_max_gb']}g",
         dns=MC_CONTAINER_DNS or None,
+        network=_server_network(server_id),
         labels={MANAGED_LABEL: "true", SERVER_ID_LABEL: str(server_id), TYPE_LABEL: "java"},
     )
     log.info("Horizon container created: server_id=%d, container_id=%s", server_id, container.id)
@@ -281,9 +353,10 @@ def recreate_server(row) -> str:
 
 
 def remove_server(server_id: int) -> None:
-    """Stop and remove a server's container (data directory is left intact)."""
+    """Stop and remove a server's container and network (data directory is left intact)."""
     container = get_container(server_id)
     if not container:
+        _remove_server_network(server_id)
         return
     try:
         container.stop(timeout=30)
@@ -291,6 +364,7 @@ def remove_server(server_id: int) -> None:
         log.warning("Error stopping container for server_id=%d: %s", server_id, exc)
     container.remove(force=True)
     log.info("Container removed: server_id=%d", server_id)
+    _remove_server_network(server_id)
 
 
 # Stop and restart block until the container is down, so the state they put
