@@ -247,6 +247,24 @@ same mods, which Horizon checks. Client-only mods (a HUD, a minimap) stay on the
 player's computer. Native mods (`.hnmod`) aren't installed on servers: they need
 a Horizon engine compiled with them.
 
+## Server networks
+
+Every server runs on a Docker network of its own (`cscm-mc-net-<id>`, host
+interface `tmc<id>`). One server's mods can't reach another server's container,
+which matters once people you don't know run modpacks on your machine. Players
+connect through the published port as before.
+
+Docker hands out about 30 networks from its default address ranges. For more
+servers, give it a bigger pool in `/etc/docker/daemon.json` and restart Docker:
+
+```json
+{ "default-address-pools": [{ "base": "10.208.0.0/16", "size": 28 }] }
+```
+
+Pick a range your network doesn't use. Servers created before this version stay
+on the default bridge until they're recreated. To keep every server on the
+default bridge, set `MC_NETWORK_ISOLATION=false` in `.env`.
+
 ## Updates
 
 The dashboard checks `backend/VERSION` on the `main` branch about once an hour.
